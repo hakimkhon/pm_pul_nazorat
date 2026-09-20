@@ -53,7 +53,7 @@ class _TransactionSearchScreenState extends ConsumerState<TransactionSearchScree
             hintStyle: TextStyle(color: AppTheme.mutedText(context), fontSize: 14),
             border: InputBorder.none,
             filled: false,
-            contentPadding: EdgeInsets.zero,
+            contentPadding: const EdgeInsets.only(left: 4),
           ),
           onChanged: (v) => setState(() => _query = v),
         ),

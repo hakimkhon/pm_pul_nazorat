@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/budget_provider.dart';
-import '../../core/utils/icon_helper.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/shared_widgets.dart';
 import '../../models/category_model.dart';
+import '../add_transaction/add_transaction_screen.dart';
 import '../home/home_screen.dart' show uzMonths;
 
 class CategoryDetailScreen extends ConsumerStatefulWidget {
@@ -171,8 +171,36 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
                 : ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     itemCount: displayedItems.length,
-                    itemBuilder: (context, index) => FadeInItem(index: index, child: TransactionTile(transaction: displayedItems[index], category: category)),
+                    itemBuilder: (context, index) => FadeInItem(
+                      index: index,
+                      child: TransactionTile(
+                        transaction: displayedItems[index],
+                        category: category,
+                        onEdit: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => AddTransactionScreen(existing: displayedItems[index]))),
+                        onDelete: () => _confirmDelete(context, ref, displayedItems[index].id),
+                      ),
+                    ),
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext context, WidgetRef ref, String id) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text("O'chirish"),
+        content: const Text("Bu tranzaksiyani o'chirmoqchimisiz?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Bekor qilish')),
+          TextButton(
+            onPressed: () {
+              ref.read(transactionProvider.notifier).deleteTransaction(id);
+              Navigator.pop(dialogContext);
+            },
+            child: Text("O'chirish", style: TextStyle(color: AppTheme.brandExpense(context))),
           ),
         ],
       ),

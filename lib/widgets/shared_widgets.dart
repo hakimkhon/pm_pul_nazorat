@@ -44,29 +44,48 @@ class CategoryAvatar extends StatelessWidget {
   }
 }
 
-/// Bitta tranzaksiya qatori — bosh sahifa, kategoriya tafsiloti, qidiruv natijasida ishlatiladi
-class TransactionTile extends StatelessWidget {
+/// Bitta tranzaksiya qatori — bosh sahifa, kategoriya tafsiloti, qidiruv natijasida ishlatiladi.
+/// onEdit/onDelete berilsa, chapga surilganda ular ko'rinadi (swipe-to-action).
+class TransactionTile extends StatefulWidget {
   final TransactionModel transaction;
   final CategoryModel category;
   final bool showCategoryAsSubtitle;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   const TransactionTile({
     super.key,
     required this.transaction,
     required this.category,
     this.showCategoryAsSubtitle = false,
+    this.onEdit,
+    this.onDelete,
   });
 
   @override
+  State<TransactionTile> createState() => _TransactionTileState();
+}
+
+class _TransactionTileState extends State<TransactionTile> {
+  double _dragExtent = 0;
+  static const double _actionWidth = 60;
+
+  double get _maxDrag => (widget.onEdit != null ? _actionWidth : 0) + (widget.onDelete != null ? _actionWidth : 0);
+
+  void _close() {
+    if (mounted) setState(() => _dragExtent = 0);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final t = transaction;
+    final t = widget.transaction;
+    final category = widget.category;
     final subtitle = (t.note != null && t.note!.isNotEmpty)
         ? t.note!
-        : (showCategoryAsSubtitle ? category.name : DateFormat('dd.MM.yyyy').format(t.date));
+        : (widget.showCategoryAsSubtitle ? category.name : DateFormat('dd.MM.yyyy').format(t.date));
 
-    return AppCard(
+    final content = AppCard(
       padding: const EdgeInsets.all(12),
-      margin: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
           CategoryAvatar(category: category),
@@ -96,6 +115,59 @@ class TransactionTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    if (_maxDrag == 0) {
+      return Padding(padding: const EdgeInsets.only(bottom: 10), child: content);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (widget.onEdit != null)
+                    _SwipeActionButton(icon: Icons.edit_outlined, color: AppTheme.brandPrimary(context), width: _actionWidth, onTap: () { _close(); widget.onEdit!(); }),
+                  if (widget.onDelete != null)
+                    _SwipeActionButton(icon: Icons.delete_outline, color: AppTheme.brandExpense(context), width: _actionWidth, onTap: () { _close(); widget.onDelete!(); }),
+                ],
+              ),
+            ),
+            GestureDetector(
+              onHorizontalDragUpdate: (d) => setState(() => _dragExtent = (_dragExtent + d.delta.dx).clamp(-_maxDrag, 0.0)),
+              onHorizontalDragEnd: (d) => setState(() => _dragExtent = _dragExtent < -_maxDrag / 2 ? -_maxDrag : 0),
+              onTap: _dragExtent != 0 ? _close : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                transform: Matrix4.translationValues(_dragExtent, 0, 0),
+                child: content,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SwipeActionButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final double width;
+  final VoidCallback onTap;
+  const _SwipeActionButton({required this.icon, required this.color, required this.width, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(width: width, color: color, alignment: Alignment.center, child: Icon(icon, color: Colors.white, size: 22)),
     );
   }
 }
@@ -297,6 +369,7 @@ class ContrastStatChip extends StatelessWidget {
   }
 }
 
+/// Kirim/Chiqim yoki boshqa 2-4 variantli tugmalar qatori (chip uslubida)
 class PillSelector<T> extends StatelessWidget {
   final Map<String, T> options;
   final T selected;
