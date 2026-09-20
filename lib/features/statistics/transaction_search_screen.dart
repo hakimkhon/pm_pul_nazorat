@@ -46,9 +46,14 @@ class _TransactionSearchScreenState extends ConsumerState<TransactionSearchScree
         title: TextField(
           controller: _controller,
           autofocus: true,
-          decoration: const InputDecoration(
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 16),
+          cursorColor: AppTheme.brandPrimary(context),
+          decoration: InputDecoration(
             hintText: 'Qidirish... (masalan: non, taksi, dorixona)',
+            hintStyle: TextStyle(color: AppTheme.mutedText(context), fontSize: 14),
             border: InputBorder.none,
+            filled: false,
+            contentPadding: EdgeInsets.zero,
           ),
           onChanged: (v) => setState(() => _query = v),
         ),

@@ -3,6 +3,7 @@ import '../models/category_model.dart';
 import '../models/transaction_model.dart';
 import '../models/budget_model.dart';
 import '../models/recurring_transaction_model.dart';
+import '../models/debt_model.dart';
 
 class HiveService {
   static const String categoryBox = 'categories';
@@ -10,6 +11,7 @@ class HiveService {
   static const String budgetBox = 'budgets';
   static const String settingsBox = 'settings';
   static const String recurringBox = 'recurring';
+  static const String debtBox = 'debts';
 
   static Future<void> init() async {
     await Hive.initFlutter();
@@ -18,11 +20,14 @@ class HiveService {
     Hive.registerAdapter(TransactionModelAdapter());
     Hive.registerAdapter(BudgetModelAdapter());
     Hive.registerAdapter(RecurringTransactionModelAdapter());
+    Hive.registerAdapter(DebtPaymentModelAdapter()); // <-- YANGI (avval)
+    Hive.registerAdapter(DebtModelAdapter());        // <-- YANGI
 
     await Hive.openBox<CategoryModel>(categoryBox);
     await Hive.openBox<TransactionModel>(transactionBox);
     await Hive.openBox<BudgetModel>(budgetBox);
     await Hive.openBox<RecurringTransactionModel>(recurringBox);
+    await Hive.openBox<DebtModel>(debtBox);
     await Hive.openBox(settingsBox);
 
     await _seedDefaultCategories();

@@ -17,27 +17,14 @@ class CategoriesScreen extends ConsumerStatefulWidget {
   ConsumerState<CategoriesScreen> createState() => _CategoriesScreenState();
 }
 
-class _CategoriesScreenState extends ConsumerState<CategoriesScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
   bool _isGrid = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+  String _selectedType = 'expense';
 
   @override
   Widget build(BuildContext context) {
     final categories = ref.watch(categoryProvider);
-    final expenseList = categories.where((c) => c.type == 'expense').toList();
-    final incomeList = categories.where((c) => c.type == 'income').toList();
+    final list = categories.where((c) => c.type == _selectedType).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -52,25 +39,22 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> with Single
             icon: const Icon(Icons.add_circle, size: 26),
             tooltip: "Yangi bo'lim",
             color: AppTheme.brandPrimary(context),
-            onPressed: () => _openAddEditSheet(type: _tabController.index == 0 ? 'expense' : 'income'),
+            onPressed: () => _openAddEditSheet(type: _selectedType),
           ),
           const SizedBox(width: 6),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: AppTheme.brandPrimary(context),
-          unselectedLabelColor: AppTheme.mutedText(context),
-          indicatorColor: AppTheme.brandGold(context),
-          indicatorWeight: 3,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-          tabs: const [Tab(text: 'Chiqim'), Tab(text: 'Kirim')],
-        ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _CategoryListOrGrid(categories: expenseList, isGrid: _isGrid),
-          _CategoryListOrGrid(categories: incomeList, isGrid: _isGrid),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: EqualSegmentedBar<String>(
+              options: const {'Chiqim': 'expense', 'Kirim': 'income'},
+              selected: _selectedType,
+              onSelect: (v) => setState(() => _selectedType = v),
+            ),
+          ),
+          Expanded(child: _CategoryListOrGrid(categories: list, isGrid: _isGrid)),
         ],
       ),
     );
@@ -86,7 +70,6 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> with Single
   }
 }
 
-/// Bir xil ma'lumotni ikki xil ko'rinishda (grid/list) chiqaradi
 class _CategoryListOrGrid extends ConsumerWidget {
   final List<CategoryModel> categories;
   final bool isGrid;
@@ -108,7 +91,7 @@ class _CategoryListOrGrid extends ConsumerWidget {
 
     if (isGrid) {
       return GridView.builder(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 3 / 2),
         itemCount: categories.length,
         itemBuilder: (context, index) => FadeInItem(
@@ -119,7 +102,7 @@ class _CategoryListOrGrid extends ConsumerWidget {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       itemCount: categories.length,
       itemBuilder: (context, index) => FadeInItem(
         index: index,
@@ -163,7 +146,7 @@ class _CategoryGridTileState extends State<_CategoryGridTile> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CategoryAvatar(category: c, radius: 16, iconSize: 16),
+                  Hero(tag: 'cat_icon_${c.id}', child: CategoryAvatar(category: c, radius: 16, iconSize: 16)),
                   const SizedBox(width: 8),
                   Expanded(child: Text(c.name, style: Theme.of(context).textTheme.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis)),
                 ],
@@ -198,7 +181,7 @@ class _CategoryListTile extends StatelessWidget {
       child: ListTile(
         onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryDetailScreen(category: category))),
         onLongPress: () => showCategoryOptions(context, category),
-        leading: CategoryAvatar(category: category),
+        leading: Hero(tag: 'cat_icon_${category.id}', child: CategoryAvatar(category: category)),
         title: Text(category.name, style: Theme.of(context).textTheme.titleMedium),
         subtitle: Text(category.isDefault ? 'Standart bo\'lim' : 'Foydalanuvchi bo\'limi', style: Theme.of(context).textTheme.labelSmall),
         trailing: budgetLimit != null
@@ -209,7 +192,7 @@ class _CategoryListTile extends StatelessWidget {
   }
 }
 
-// ==================== UMUMIY: uzoq bosish menyusi (Consumer ichida chaqiriladi) ====================
+// ==================== UMUMIY: uzoq bosish menyusi ====================
 void showCategoryOptions(BuildContext context, CategoryModel category) {
   showModalBottomSheet(
     context: context,

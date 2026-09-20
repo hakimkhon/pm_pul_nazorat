@@ -4,9 +4,13 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../../providers/statistics_provider.dart';
 import '../../providers/category_provider.dart';
+import '../../providers/budget_provider.dart';
 import '../../core/utils/date_range_helper.dart';
 import '../../core/utils/icon_helper.dart';
 import '../../core/theme/app_theme.dart';
+import '../../widgets/shared_widgets.dart';
+import '../../providers/profit_loss_provider.dart';
+import '../categories/category_detail_screen.dart';
 import 'transaction_search_screen.dart';
 
 class StatisticsScreen extends ConsumerStatefulWidget {
@@ -17,9 +21,8 @@ class StatisticsScreen extends ConsumerStatefulWidget {
 }
 
 class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
-  String _viewType = 'expense'; // 'expense' yoki 'income'
-
-  String _formatMoney(double v) => "${NumberFormat("#,##0").format(v)} so'm";
+  String _viewType = 'expense';
+  String _mainTab = 'overview'; // 'overview' | 'profitLoss'
 
   @override
   Widget build(BuildContext context) {
@@ -29,10 +32,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     final breakdown = ref.watch(categoryBreakdownProvider(_viewType));
     final totalIncome = ref.watch(periodTotalIncomeProvider);
     final totalExpense = ref.watch(periodTotalExpenseProvider);
+    final budgets = ref.watch(budgetProvider);
 
     final total = breakdown.values.fold(0.0, (a, b) => a + b);
-
-    // Kategoriya bo'yicha tartiblangan ro'yxat (eng ko'p sarflanganidan boshlab)
     final sortedEntries = breakdown.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
@@ -54,10 +56,31 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Davr tanlash
-          _PeriodSelector(),
+          EqualSegmentedBar<String>(
+            options: const {
+              'Umumiy statistika': 'overview',
+              'Foyda-zarar tahlili': 'profitLoss',
+            },
+            selected: _mainTab,
+            onSelect: (v) => setState(() => _mainTab = v),
+          ),
+          const SizedBox(height: 16),
 
-          const SizedBox(height: 8),
+          EqualSegmentedBar<PeriodType>(
+            options: const {
+              'Kunlik': PeriodType.daily,
+              'Haftalik': PeriodType.weekly,
+              'Oylik': PeriodType.monthly,
+              'Yillik': PeriodType.yearly,
+            },
+            selected: periodType,
+            onSelect: (t) {
+              ref.read(selectedPeriodTypeProvider.notifier).state = t;
+              ref.read(selectedReferenceDateProvider.notifier).state =
+                  DateTime.now();
+            },
+          ),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -69,10 +92,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
               ),
               Text(
                 DateRangeHelper.label(periodType, refDate),
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
+                style: Theme.of(context).textTheme.titleMedium,
               ),
               IconButton(
                 icon: const Icon(Icons.chevron_right),
@@ -84,203 +104,210 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Kirim/Chiqim umumiy karta
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _SummaryTile(
-                    label: 'Kirim',
-                    value: totalIncome,
-                    color: AppTheme.income,
-                    icon: Icons.arrow_downward,
-                  ),
-                ),
-                Container(
-                  width: 1,
-                  height: 40,
-                  color: Colors.grey.withValues(alpha: 0.15),
-                ),
-                Expanded(
-                  child: _SummaryTile(
-                    label: 'Chiqim',
-                    value: totalExpense,
-                    color: AppTheme.expense,
-                    icon: Icons.arrow_upward,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Kirim/Chiqim toggle
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _ToggleTab(
-                    label: 'Chiqimlar',
-                    selected: _viewType == 'expense',
-                    onTap: () => setState(() => _viewType = 'expense'),
-                  ),
-                ),
-                Expanded(
-                  child: _ToggleTab(
-                    label: 'Kirimlar',
-                    selected: _viewType == 'income',
-                    onTap: () => setState(() => _viewType = 'income'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          if (breakdown.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 60),
-              child: Center(child: Text("Bu davrda ma'lumot yo'q")),
+          if (_mainTab == 'profitLoss')
+            _ProfitLossView(
+              periodLabel: DateRangeHelper.label(periodType, refDate),
             )
           else ...[
-            // Doiraviy diagramma
-            SizedBox(
-              height: 220,
-              child: PieChart(
-                PieChartData(
-                  sectionsSpace: 3,
-                  centerSpaceRadius: 55,
-                  sections: sortedEntries.map((entry) {
-                    final cat = categories.firstWhere(
-                      (c) => c.id == entry.key,
-                      orElse: () => categories.first,
-                    );
-                    final percent = total == 0
-                        ? 0
-                        : (entry.value / total * 100);
-                    return PieChartSectionData(
-                      value: entry.value,
-                      color: Color(cat.colorValue),
-                      title: '${percent.toStringAsFixed(0)}%',
-                      radius: 42,
-                      titleStyle: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Center(
-              child: Column(
+            AppCard(
+              padding: const EdgeInsets.all(18),
+              child: Row(
                 children: [
-                  Text(
-                    _viewType == 'expense' ? 'Jami chiqim' : 'Jami kirim',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  Expanded(
+                    child: _SummaryTile(
+                      label: 'Kirim',
+                      value: totalIncome,
+                      color: AppTheme.brandIncome(context),
+                      icon: Icons.arrow_downward_rounded,
+                    ),
                   ),
-                  Text(
-                    _formatMoney(total),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
+                  Container(
+                    width: 1,
+                    height: 40,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.1),
+                  ),
+                  Expanded(
+                    child: _SummaryTile(
+                      label: 'Chiqim',
+                      value: totalExpense,
+                      color: AppTheme.brandExpense(context),
+                      icon: Icons.arrow_upward_rounded,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
-            // Bo'limlar bo'yicha ro'yxat
-            const Text(
-              "Bo'limlar bo'yicha",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            EqualSegmentedBar<String>(
+              options: const {'Chiqimlar': 'expense', 'Kirimlar': 'income'},
+              selected: _viewType,
+              onSelect: (v) => setState(() => _viewType = v),
             ),
-            const SizedBox(height: 12),
-            ...sortedEntries.map((entry) {
-              final cat = categories.firstWhere(
-                (c) => c.id == entry.key,
-                orElse: () => categories.first,
-              );
-              final percent = total == 0 ? 0 : (entry.value / total * 100);
-              final color = Color(cat.colorValue);
+            const SizedBox(height: 20),
 
-              return Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
+            if (breakdown.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: EmptyState(
+                  icon: Icons.pie_chart_outline_rounded,
+                  title: "Bu davrda ma'lumot yo'q",
                 ),
-                child: Row(
+              )
+            else ...[
+              SizedBox(
+                height: 220,
+                child: PieChart(
+                  PieChartData(
+                    sectionsSpace: 3,
+                    centerSpaceRadius: 55,
+                    sections: sortedEntries.map((entry) {
+                      final cat = categories.firstWhere(
+                        (c) => c.id == entry.key,
+                        orElse: () => categories.first,
+                      );
+                      final percent = total == 0
+                          ? 0
+                          : (entry.value / total * 100);
+                      return PieChartSectionData(
+                        value: entry.value,
+                        color: Color(cat.colorValue),
+                        title: '${percent.toStringAsFixed(0)}%',
+                        radius: 42,
+                        titleStyle: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: Column(
                   children: [
-                    CircleAvatar(
-                      radius: 18,
-                      backgroundColor: color.withValues(alpha: 0.15),
-                      child: Icon(
-                        IconHelper.getIcon(cat.iconCode),
-                        color: color,
-                        size: 18,
-                      ),
+                    Text(
+                      _viewType == 'expense' ? 'Jami chiqim' : 'Jami kirim',
+                      style: Theme.of(context).textTheme.labelSmall,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            cat.name,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 4),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: LinearProgressIndicator(
-                              value: total == 0 ? 0 : entry.value / total,
-                              minHeight: 6,
-                              backgroundColor: color.withValues(alpha: 0.12),
-                              valueColor: AlwaysStoppedAnimation(color),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          _formatMoney(entry.value),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                        Text(
-                          '${percent.toStringAsFixed(1)}%',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      ],
+                    Text(
+                      '${NumberFormat("#,##0").format(total)} so\'m',
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ],
                 ),
-              );
-            }),
+              ),
+              const SizedBox(height: 24),
+
+              Text(
+                "Bo'limlar bo'yicha",
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              ...sortedEntries.map((entry) {
+                final cat = categories.firstWhere(
+                  (c) => c.id == entry.key,
+                  orElse: () => categories.first,
+                );
+                final percent = total == 0 ? 0 : (entry.value / total * 100);
+                final color = Color(cat.colorValue);
+
+                double? budgetLimit;
+                try {
+                  budgetLimit = budgets
+                      .firstWhere((b) => b.categoryId == cat.id)
+                      .monthlyLimit;
+                } catch (_) {
+                  budgetLimit = null;
+                }
+
+                return GestureDetector(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => CategoryDetailScreen(category: cat),
+                    ),
+                  ),
+                  child: AppCard(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    tint: color,
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: color.withValues(alpha: 0.15),
+                          child: Icon(
+                            IconHelper.getIcon(cat.iconCode),
+                            color: color,
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                cat.name,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: LinearProgressIndicator(
+                                  value: total == 0 ? 0 : entry.value / total,
+                                  minHeight: 6,
+                                  backgroundColor: color.withValues(
+                                    alpha: 0.15,
+                                  ),
+                                  valueColor: AlwaysStoppedAnimation(color),
+                                ),
+                              ),
+                              if (budgetLimit != null &&
+                                  _viewType == 'expense') ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Byudjet: ${NumberFormat.compact().format(budgetLimit)} so\'m',
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '${NumberFormat("#,##0").format(entry.value)}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                            Text(
+                              '${percent.toStringAsFixed(1)}%',
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
           ],
         ],
       ),
@@ -288,43 +315,146 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   }
 }
 
-class _PeriodSelector extends ConsumerWidget {
+class _ProfitLossView extends ConsumerWidget {
+  final String periodLabel;
+  const _ProfitLossView({required this.periodLabel});
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selected = ref.watch(selectedPeriodTypeProvider);
+    final entries = ref.watch(profitLossProvider);
 
-    final options = {
-      PeriodType.daily: 'Kunlik',
-      PeriodType.weekly: 'Haftalik',
-      PeriodType.monthly: 'Oylik',
-      PeriodType.yearly: 'Yillik',
-    };
+    if (entries.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: EmptyState(
+          icon: Icons.compare_arrows_rounded,
+          title: "Mos keluvchi faoliyat topilmadi",
+          subtitle:
+              "Bir xil nomdagi kirim VA chiqim bo'limi bo'lsa (masalan ikkalasida ham \"Dehqonchilik\"), shu yerda avtomatik solishtiriladi.",
+        ),
+      );
+    }
 
-    return SizedBox(
-      height: 40,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: options.entries.map((entry) {
-          final isSelected = entry.key == selected;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(entry.value),
-              selected: isSelected,
-              onSelected: (_) {
-                ref.read(selectedPeriodTypeProvider.notifier).state = entry.key;
-                ref.read(selectedReferenceDateProvider.notifier).state =
-                    DateTime.now();
-              },
-              selectedColor: AppTheme.primary.withValues(alpha: 0.15),
-              labelStyle: TextStyle(
-                color: isSelected ? AppTheme.primary : Colors.black87,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+    final totalProfit = entries.fold(0.0, (s, e) => s + e.profit);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppCard(
+          tint: totalProfit >= 0
+              ? AppTheme.brandIncome(context)
+              : AppTheme.brandExpense(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$periodLabel — umumiy natija',
+                style: Theme.of(context).textTheme.labelSmall,
               ),
+              const SizedBox(height: 6),
+              Text(
+                '${totalProfit >= 0 ? '+' : ''}${NumberFormat("#,##0").format(totalProfit)} so\'m',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 24,
+                  color: totalProfit >= 0
+                      ? AppTheme.brandIncome(context)
+                      : AppTheme.brandExpense(context),
+                ),
+              ),
+              Text(
+                totalProfit >= 0 ? 'Umumiy foyda' : 'Umumiy zarar',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          "Faoliyatlar bo'yicha",
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 10),
+        ...entries.map((e) {
+          final color = e.isProfit
+              ? AppTheme.brandIncome(context)
+              : AppTheme.brandExpense(context);
+          final total = e.income + e.expense;
+          final incomeRatio = total == 0 ? 0.5 : e.income / total;
+
+          return AppCard(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            tint: color,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      e.name,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      '${e.isProfit ? '+' : ''}${NumberFormat("#,##0").format(e.profit)} so\'m',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: (incomeRatio * 100).round().clamp(1, 99),
+                        child: Container(
+                          height: 8,
+                          color: AppTheme.brandIncome(context),
+                        ),
+                      ),
+                      Expanded(
+                        flex: (100 - (incomeRatio * 100).round()).clamp(1, 99),
+                        child: Container(
+                          height: 8,
+                          color: AppTheme.brandExpense(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Kirim: ${NumberFormat.compact().format(e.income)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.brandIncome(context),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      'Chiqim: ${NumberFormat.compact().format(e.expense)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.brandExpense(context),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           );
-        }).toList(),
-      ),
+        }),
+      ],
     );
   }
 }
@@ -334,7 +464,6 @@ class _SummaryTile extends StatelessWidget {
   final double value;
   final Color color;
   final IconData icon;
-
   const _SummaryTile({
     required this.label,
     required this.value,
@@ -349,68 +478,21 @@ class _SummaryTile extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 14, color: color),
+            Icon(icon, size: 15, color: color),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-            ),
+            Text(label, style: Theme.of(context).textTheme.labelSmall),
           ],
         ),
         const SizedBox(height: 6),
         Text(
-          "${NumberFormat.compact().format(value)} so'm",
+          '${NumberFormat.compact().format(value)} so\'m',
           style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            fontSize: 17,
             color: color,
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ToggleTab extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _ToggleTab({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 4,
-                  ),
-                ]
-              : null,
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-              color: selected ? AppTheme.primary : Colors.grey.shade600,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

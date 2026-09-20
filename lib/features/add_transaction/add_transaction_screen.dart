@@ -6,6 +6,7 @@ import '../../providers/transaction_provider.dart';
 import '../../models/transaction_model.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/thousands_formatter.dart';
+import '../../core/utils/budget_alert_checker.dart';
 
 class AddTransactionScreen extends ConsumerStatefulWidget {
   const AddTransactionScreen({super.key});
@@ -16,7 +17,7 @@ class AddTransactionScreen extends ConsumerStatefulWidget {
 }
 
 class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
-  String _type = 'expense'; // yoki 'income'
+  String _type = 'expense';
   final _amountController = TextEditingController();
   final _sourceController = TextEditingController();
   final _noteController = TextEditingController();
@@ -41,163 +42,184 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Yangi tranzaksiya')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Kirim / Chiqim tanlash
-            Row(
-              children: [
-                Expanded(
-                  child: _TypeButton(
-                    label: 'Chiqim',
-                    color: AppTheme.coral,
-                    selected: _type == 'expense',
-                    onTap: () => setState(() {
-                      _type = 'expense';
-                      _selectedCategoryId = null;
-                    }),
+      // ---- Asosiy forma: scroll qilinadigan qism ----
+      body: SafeArea(
+        bottom: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _TypeButton(
+                      label: 'Chiqim',
+                      color: AppTheme.brandExpense(context),
+                      selected: _type == 'expense',
+                      onTap: () => setState(() {
+                        _type = 'expense';
+                        _selectedCategoryId = null;
+                      }),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _TypeButton(
-                    label: 'Kirim',
-                    color: AppTheme.emerald,
-                    selected: _type == 'income',
-                    onTap: () => setState(() {
-                      _type = 'income';
-                      _selectedCategoryId = null;
-                    }),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _TypeButton(
+                      label: 'Kirim',
+                      color: AppTheme.brandIncome(context),
+                      selected: _type == 'income',
+                      onTap: () => setState(() {
+                        _type = 'income';
+                        _selectedCategoryId = null;
+                      }),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: TextField(
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              TextField(
                 controller: _amountController,
                 keyboardType: TextInputType.number,
                 inputFormatters: [ThousandsFormatter()],
-                style: const TextStyle(
-                  fontSize: 28,
+                style: TextStyle(
+                  fontSize: 26,
                   fontWeight: FontWeight.w800,
-                  color: AppTheme.ink,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'Summa',
                   suffixText: "so'm",
-                  border: InputBorder.none,
-                  filled: false,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              Text(
+                'Bo\'lim',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: categories.map((c) {
+                  final catColor = Color(c.colorValue);
+                  final selected = c.id == _selectedCategoryId;
+                  return ChoiceChip(
+                    label: Text(c.name),
+                    selected: selected,
+                    showCheckmark: false,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    selectedColor: catColor,
+                    labelStyle: TextStyle(
+                      color: selected
+                          ? Colors.white
+                          : Theme.of(context).colorScheme.onSurface,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                    side: BorderSide(
+                      color: selected ? catColor : Colors.transparent,
+                    ),
+                    onSelected: (_) =>
+                        setState(() => _selectedCategoryId = c.id),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Sana'),
+                subtitle: Text(
+                  '${_selectedDate.day}.${_selectedDate.month}.${_selectedDate.year}',
+                ),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _selectedDate,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) setState(() => _selectedDate = picked);
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Vaqt'),
+                subtitle: Text(_selectedTime.format(context)),
+                trailing: const Icon(Icons.access_time),
+                onTap: () async {
+                  final picked = await showTimePicker(
+                    context: context,
+                    initialTime: _selectedTime,
+                  );
+                  if (picked != null) setState(() => _selectedTime = picked);
+                },
+              ),
+              const SizedBox(height: 8),
+
+              TextField(
+                controller: _sourceController,
+                decoration: InputDecoration(
+                  labelText: _type == 'income'
+                      ? 'Qayerdan keldi (masalan: Ish haqi)'
+                      : 'Qayerga sarflandi (masalan: Do\'kon)',
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              TextField(
+                controller: _noteController,
+                decoration: const InputDecoration(
+                  labelText: 'Izoh (ixtiyoriy)',
+                ),
+                maxLines: 2,
+              ),
+              const SizedBox(
+                height: 12,
+              ), // Pastdagi tugma bilan urilib qolmasligi uchun kichik bo'shliq
+            ],
+          ),
+        ),
+      ),
+      // ---- Saqlash tugmasi: HAR DOIM ekranning pastida, kontent qanchalik ko'p bo'lmasin ----
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: _saveTransaction,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _type == 'income'
+                    ? AppTheme.brandIncome(context)
+                    : AppTheme.brandExpense(context),
+              ),
+              child: const Text(
+                'Saqlash',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-
-            // Bo'lim tanlash
-            const Text(
-              'Bo\'lim',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: categories.map((c) {
-                final selected = c.id == _selectedCategoryId;
-                return ChoiceChip(
-                  label: Text(c.name),
-                  selected: selected,
-                  selectedColor: Color(c.colorValue).withValues(alpha: 0.25),
-                  onSelected: (_) => setState(() => _selectedCategoryId = c.id),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-
-            // Sana
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Sana'),
-              subtitle: Text(
-                '${_selectedDate.day}.${_selectedDate.month}.${_selectedDate.year}',
-              ),
-              trailing: const Icon(Icons.calendar_today),
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _selectedDate,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime(2100),
-                );
-                if (picked != null) setState(() => _selectedDate = picked);
-              },
-            ),
-            const SizedBox(height: 8),
-
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Vaqt'),
-              subtitle: Text(_selectedTime.format(context)),
-              trailing: const Icon(Icons.access_time),
-              onTap: () async {
-                final picked = await showTimePicker(
-                  context: context,
-                  initialTime: _selectedTime,
-                );
-                if (picked != null) setState(() => _selectedTime = picked);
-              },
-            ),
-            const SizedBox(height: 8),
-
-            // Manba (qayerdan/qayerga)
-            TextField(
-              controller: _sourceController,
-              decoration: InputDecoration(
-                labelText: _type == 'income'
-                    ? 'Qayerdan keldi (masalan: Ish haqi)'
-                    : 'Qayerga sarflandi (masalan: Do\'kon)',
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Izoh
-            TextField(
-              controller: _noteController,
-              decoration: const InputDecoration(
-                labelText: 'Izoh (ixtiyoriy)',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 2,
-            ),
-            const SizedBox(height: 24),
-
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _saveTransaction,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _type == 'income'
-                      ? AppTheme.income
-                      : AppTheme.expense,
-                ),
-                child: const Text(
-                  'Saqlash',
-                  style: TextStyle(fontSize: 16, color: Colors.white),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  void _saveTransaction() {
+  void _saveTransaction() async {
     final amount = ThousandsFormatter.parse(_amountController.text);
 
     if (amount == null || amount <= 0) {
@@ -234,7 +256,12 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     );
 
     ref.read(transactionProvider.notifier).addTransaction(transaction);
-    Navigator.of(context).pop();
+
+    if (_type == 'expense') {
+      await checkBudgetAlerts(ref);
+    }
+
+    if (mounted) Navigator.of(context).pop();
   }
 }
 
@@ -260,7 +287,7 @@ class _TypeButton extends StatelessWidget {
         curve: Curves.easeOutCubic,
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: selected ? color : Colors.white,
+          color: selected ? color : Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: selected ? color : color.withValues(alpha: 0.25),

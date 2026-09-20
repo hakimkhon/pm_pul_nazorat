@@ -93,10 +93,10 @@ class AppTheme {
         displayMedium: GoogleFonts.spaceGrotesk(
           fontSize: 24, fontWeight: FontWeight.w700, color: textColor, letterSpacing: -0.3,
         ),
-        titleLarge: GoogleFonts.plusJakartaSans(fontSize: 19, fontWeight: FontWeight.w700, color: textColor),
-        titleMedium: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w600, color: textColor),
-        bodyMedium: GoogleFonts.plusJakartaSans(fontSize: 14, color: textColor.withValues(alpha: 0.8), height: 1.4),
-        labelSmall: GoogleFonts.plusJakartaSans(fontSize: 12, color: muted, fontWeight: FontWeight.w500),
+        titleLarge: GoogleFonts.plusJakartaSans(fontSize: 20, fontWeight: FontWeight.w700, color: textColor),
+        titleMedium: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w600, color: textColor),
+        bodyMedium: GoogleFonts.plusJakartaSans(fontSize: 15, color: textColor.withValues(alpha: 0.8), height: 1.4),
+        labelSmall: GoogleFonts.plusJakartaSans(fontSize: 13, color: muted, fontWeight: FontWeight.w500),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -162,10 +162,14 @@ class AppTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusMedium)),
+        titleTextStyle: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w700, color: textColor),
+        contentTextStyle: GoogleFonts.plusJakartaSans(fontSize: 14, color: textColor.withValues(alpha: 0.75), height: 1.4),
       ),
       switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith((states) =>
-            states.contains(WidgetState.selected) ? (isDark ? emeraldBright : deepTeal) : null),
+        thumbColor: const WidgetStatePropertyAll(Colors.white),
+        trackColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected) ? (isDark ? emeraldBright : emerald) : textColor.withValues(alpha: isDark ? 0.24 : 0.18)),
+        trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
       ),
     );
   }

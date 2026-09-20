@@ -206,7 +206,97 @@ class FadeInItem extends StatelessWidget {
   }
 }
 
-/// Kirim/Chiqim yoki boshqa 2-4 variantli tugmalar qatori (chip uslubida)
+/// Teng kenglikdagi segmentlar qatori (masalan Kunlik/Haftalik/Oylik/Yillik) —
+/// tanlangan segment aniq ko'rinadigan yuqori kontrast bilan
+class EqualSegmentedBar<T> extends StatelessWidget {
+  final Map<String, T> options;
+  final T selected;
+  final void Function(T) onSelect;
+
+  const EqualSegmentedBar({super.key, required this.options, required this.selected, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: options.entries.map((entry) {
+          final isSelected = entry.value == selected;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onSelect(entry.value),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppTheme.brandPrimary(context) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(11),
+                  boxShadow: isSelected ? [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 2))] : null,
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    entry.key,
+                    style: TextStyle(
+                      color: isSelected ? (isDark ? AppTheme.darkBg : Colors.white) : Theme.of(context).colorScheme.onSurface,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+/// Kirim/Chiqim mini-statistika: qorong'i/yorug' rejimda ham ikonka aniq ko'rinishi uchun
+/// TO'LIQ RANGLI (alpha past emas) doira fon + oq ikonka ishlatiladi
+class ContrastStatChip extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+  final IconData icon;
+
+  const ContrastStatChip({super.key, required this.label, required this.value, required this.color, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          child: Icon(icon, size: 15, color: Colors.white),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(NumberFormat.compact().format(value), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class PillSelector<T> extends StatelessWidget {
   final Map<String, T> options;
   final T selected;

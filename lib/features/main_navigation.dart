@@ -30,10 +30,7 @@ class _MainNavigationState extends State<MainNavigation> {
         pageBuilder: (_, __, ___) => const AddTransactionScreen(),
         transitionsBuilder: (_, animation, __, child) {
           final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-          return SlideTransition(
-            position: Tween(begin: const Offset(0, 0.06), end: Offset.zero).animate(curved),
-            child: FadeTransition(opacity: curved, child: child),
-          );
+          return SlideTransition(position: Tween(begin: const Offset(0, 0.06), end: Offset.zero).animate(curved), child: FadeTransition(opacity: curved, child: child));
         },
       ),
     );
@@ -43,24 +40,37 @@ class _MainNavigationState extends State<MainNavigation> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(index: _index, children: _screens),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openAdd,
-        child: const Icon(Icons.add, size: 28),
+      floatingActionButton: SizedBox(
+        width: 62,
+        height: 62,
+        child: FloatingActionButton(
+          backgroundColor: AppTheme.brandGold(context),
+          foregroundColor: Colors.white,
+          elevation: 4,
+          onPressed: _openAdd,
+          child: const Icon(Icons.add, size: 32),
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      bottomNavigationBar: BottomAppBar(
-        color: Theme.of(context).cardColor,
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 8,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Bosh sahifa', selected: _index == 0, onTap: () => setState(() => _index = 0)),
-            _NavItem(icon: Icons.category_outlined, activeIcon: Icons.category, label: "Bo'limlar", selected: _index == 1, onTap: () => setState(() => _index = 1)),
-            const SizedBox(width: 48), // FAB uchun bo'sh joy
-            _NavItem(icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart, label: 'Statistika', selected: _index == 2, onTap: () => setState(() => _index = 2)),
-            _NavItem(icon: Icons.settings_outlined, activeIcon: Icons.settings, label: 'Sozlamalar', selected: _index == 3, onTap: () => setState(() => _index = 3)),
-          ],
+      // SafeArea — FABni telefonning pastki tizim navigatsiya paneli (gesture bar) ustiga ko'taradi
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: BottomAppBar(
+          color: Theme.of(context).cardColor,
+          shape: const CircularNotchedRectangle(),
+          notchMargin: 8,
+          height: 74,
+          padding: EdgeInsets.zero,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Bosh sahifa', selected: _index == 0, onTap: () => setState(() => _index = 0)),
+              _NavItem(icon: Icons.category_outlined, activeIcon: Icons.category, label: "Bo'limlar", selected: _index == 1, onTap: () => setState(() => _index = 1)),
+              const SizedBox(width: 56),
+              _NavItem(icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart, label: 'Statistika', selected: _index == 2, onTap: () => setState(() => _index = 2)),
+              _NavItem(icon: Icons.settings_outlined, activeIcon: Icons.settings, label: 'Sozlamalar', selected: _index == 3, onTap: () => setState(() => _index = 3)),
+            ],
+          ),
         ),
       ),
     );
@@ -79,18 +89,24 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? AppTheme.brandPrimary(context) : AppTheme.mutedText(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(selected ? activeIcon : icon, color: color, size: 24),
-            const SizedBox(height: 3),
-            Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: selected ? FontWeight.w700 : FontWeight.w400)),
-          ],
+    // Bottom navigatsiya yorlig'lari shrift o'lchami sozlamasidan mustasno —
+    // aks holda "Katta"/"Juda katta" tanlanganda joyga sig'maydi
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(selected ? activeIcon : icon, color: color, size: 22),
+              const SizedBox(height: 2),
+              Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: selected ? FontWeight.w700 : FontWeight.w400), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
         ),
       ),
     );

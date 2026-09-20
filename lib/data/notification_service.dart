@@ -71,6 +71,21 @@ class NotificationService {
     );
   }
 
+  /// Qarz qaytarish muddati o'tganda ogohlantirish
+  static Future<void> showDebtOverdueAlert(String personName, String type, String amountText) async {
+    final message = type == 'lent'
+        ? '$personName sizga $amountText so\'m qaytarishi kerak edi — muddati o\'tdi'
+        : '$personName ga $amountText so\'m to\'lashingiz kerak edi — muddati o\'tdi';
+    await _plugin.show(
+      id: (personName + type).hashCode,
+      title: "Qarz muddati o'tdi",
+      body: message,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails('debt_overdue', 'Qarz ogohlantirishlari', importance: Importance.high),
+      ),
+    );
+  }
+
   static tz.TZDateTime _nextInstanceOfTime(int hour, int minute) {
     final now = tz.TZDateTime.now(tz.local);
     var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
