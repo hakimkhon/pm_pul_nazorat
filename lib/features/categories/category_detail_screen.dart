@@ -177,7 +177,7 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
                         transaction: displayedItems[index],
                         category: category,
                         onEdit: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => AddTransactionScreen(existing: displayedItems[index]))),
-                        onDelete: () => _confirmDelete(context, ref, displayedItems[index].id),
+                        onDelete: () => _confirmDelete(context, ref, displayedItems[index]),
                       ),
                     ),
                   ),
@@ -187,7 +187,7 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
     );
   }
 
-  void _confirmDelete(BuildContext context, WidgetRef ref, String id) {
+  void _confirmDelete(BuildContext context, WidgetRef ref, dynamic transaction) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -197,8 +197,15 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Bekor qilish')),
           TextButton(
             onPressed: () {
-              ref.read(transactionProvider.notifier).deleteTransaction(id);
               Navigator.pop(dialogContext);
+              ref.read(transactionProvider.notifier).deleteTransaction(transaction.id);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text("Tranzaksiya o'chirildi"),
+                  action: SnackBarAction(label: 'BEKOR QILISH', onPressed: () => ref.read(transactionProvider.notifier).addTransaction(transaction)),
+                  duration: const Duration(seconds: 4),
+                ),
+              );
             },
             child: Text("O'chirish", style: TextStyle(color: AppTheme.brandExpense(context))),
           ),
