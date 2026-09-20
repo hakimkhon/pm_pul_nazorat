@@ -149,11 +149,19 @@ class DebtDetailScreen extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              controller: controller, keyboardType: TextInputType.number, inputFormatters: [ThousandsFormatter()], autofocus: true,
+              controller: controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [ThousandsFormatter()],
+              autofocus: true,
+              style: TextStyle(color: Theme.of(dialogContext).colorScheme.onSurface, fontSize: 18, fontWeight: FontWeight.w700),
               decoration: InputDecoration(labelText: 'Summa', suffixText: "so'm", helperText: 'Qoldiq: ${NumberFormat("#,##0").format(debt.remainingAmount)} so\'m'),
             ),
             const SizedBox(height: 8),
-            TextField(controller: noteController, decoration: const InputDecoration(labelText: 'Izoh (ixtiyoriy)')),
+            TextField(
+              controller: noteController,
+              style: TextStyle(color: Theme.of(dialogContext).colorScheme.onSurface),
+              decoration: const InputDecoration(labelText: 'Izoh (ixtiyoriy)'),
+            ),
           ],
         ),
         actions: [
