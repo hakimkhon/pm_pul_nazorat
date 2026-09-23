@@ -257,7 +257,8 @@ void _showBudgetDialog(BuildContext context, CategoryModel category, double? cur
         title: Text('"${category.name}" uchun oylik byudjet'),
         content: TextField(
           controller: controller, keyboardType: TextInputType.number, inputFormatters: [ThousandsFormatter()],
-          autofocus: true, decoration: const InputDecoration(labelText: 'Oylik chegara', suffixText: "so'm"),
+          autofocus: true, style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 18, fontWeight: FontWeight.w700),
+          decoration: const InputDecoration(labelText: 'Oylik chegara', suffixText: "so'm"),
         ),
         actions: [
           if (currentLimit != null)

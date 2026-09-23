@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../features/home/home_screen.dart';
 import '../features/categories/categories_screen.dart';
 import '../features/statistics/statistics_screen.dart';
-import '../features/settings/settings_screen.dart';
+import '../features/profile/profile_screen.dart';
 import '../features/add_transaction/add_transaction_screen.dart';
 import '../core/theme/app_theme.dart';
 
@@ -20,7 +20,7 @@ class _MainNavigationState extends State<MainNavigation> {
     HomeScreen(),
     CategoriesScreen(),
     StatisticsScreen(),
-    SettingsScreen(),
+    ProfileScreen(),
   ];
 
   void _openAdd() {
@@ -68,7 +68,7 @@ class _MainNavigationState extends State<MainNavigation> {
               _NavItem(icon: Icons.category_outlined, activeIcon: Icons.category, label: "Bo'limlar", selected: _index == 1, onTap: () => setState(() => _index = 1)),
               const SizedBox(width: 56),
               _NavItem(icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart, label: 'Statistika', selected: _index == 2, onTap: () => setState(() => _index = 2)),
-              _NavItem(icon: Icons.settings_outlined, activeIcon: Icons.settings, label: 'Sozlamalar', selected: _index == 3, onTap: () => setState(() => _index = 3)),
+              _NavItem(icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: 'Profil', selected: _index == 3, onTap: () => setState(() => _index = 3)),
             ],
           ),
         ),
