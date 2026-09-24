@@ -21,13 +21,14 @@ class DebtPaymentModelAdapter extends TypeAdapter<DebtPaymentModel> {
       amount: fields[1] as double,
       date: fields[2] as DateTime,
       note: fields[3] as String?,
+      transactionId: fields[4] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, DebtPaymentModel obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(5)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -35,7 +36,9 @@ class DebtPaymentModelAdapter extends TypeAdapter<DebtPaymentModel> {
       ..writeByte(2)
       ..write(obj.date)
       ..writeByte(3)
-      ..write(obj.note);
+      ..write(obj.note)
+      ..writeByte(4)
+      ..write(obj.transactionId);
   }
 
   @override
@@ -69,13 +72,14 @@ class DebtModelAdapter extends TypeAdapter<DebtModel> {
       note: fields[6] as String?,
       payments: (fields[7] as List?)?.cast<DebtPaymentModel>(),
       remindedOverdue: fields[8] as bool,
+      initialTransactionId: fields[9] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, DebtModel obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -93,7 +97,9 @@ class DebtModelAdapter extends TypeAdapter<DebtModel> {
       ..writeByte(7)
       ..write(obj.payments)
       ..writeByte(8)
-      ..write(obj.remindedOverdue);
+      ..write(obj.remindedOverdue)
+      ..writeByte(9)
+      ..write(obj.initialTransactionId);
   }
 
   @override

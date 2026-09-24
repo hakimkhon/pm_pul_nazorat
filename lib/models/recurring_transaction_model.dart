@@ -20,10 +20,10 @@ class RecurringTransactionModel extends HiveObject {
   String frequency; // 'daily', 'weekly', 'monthly'
 
   @HiveField(5)
-  DateTime startDate;
+  DateTime startDate; // birinchi belgilangan sana+vaqt
 
   @HiveField(6)
-  DateTime lastGeneratedDate;
+  DateTime nextOccurrence; // keyingi bildirishnoma/yaratilish vaqti
 
   @HiveField(7)
   String? note;
@@ -41,7 +41,7 @@ class RecurringTransactionModel extends HiveObject {
     required this.type,
     required this.frequency,
     required this.startDate,
-    required this.lastGeneratedDate,
+    required this.nextOccurrence,
     this.note,
     this.source,
     this.isActive = true,

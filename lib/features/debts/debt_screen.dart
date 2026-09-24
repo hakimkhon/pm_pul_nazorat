@@ -3,8 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../providers/debt_provider.dart';
+import '../../providers/transaction_provider.dart';
 import '../../models/debt_model.dart';
+import '../../models/transaction_model.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/balance_guard.dart';
+import '../../core/utils/debt_category_helper.dart';
 import '../../widgets/shared_widgets.dart';
 import '../../core/utils/thousands_formatter.dart';
 import 'debt_detail_screen.dart';
@@ -282,7 +286,7 @@ class _AddDebtSheetState extends ConsumerState<_AddDebtSheet> {
     );
   }
 
-  void _save() {
+  void _save() async {
     final amount = ThousandsFormatter.parse(_amountController.text);
     if (_nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ismni kiriting')));
@@ -293,6 +297,33 @@ class _AddDebtSheetState extends ConsumerState<_AddDebtSheet> {
       return;
     }
 
+    // "Men berdim" — pul chiqadi (chiqim) => balans yetarli bo'lishi shart
+    final isExpense = _type == 'lent';
+    if (isExpense) {
+      final balance = calculateCurrentBalance(ref);
+      if (amount > balance) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Balansingizda yetarli mablag' yo'q. Joriy balans: ${NumberFormat("#,##0").format(balance)} so'm")),
+        );
+        return;
+      }
+    }
+
+    final (expenseCatId, incomeCatId) = await ensureDebtCategories(ref);
+    final categoryId = isExpense ? expenseCatId : incomeCatId;
+
+    final txId = const Uuid().v4();
+    final tx = TransactionModel(
+      id: txId,
+      amount: amount,
+      categoryId: categoryId,
+      type: isExpense ? 'expense' : 'income',
+      date: _date,
+      source: _nameController.text.trim(),
+      note: isExpense ? 'Qarz berildi' : 'Qarz olindi',
+    );
+    await ref.read(transactionProvider.notifier).addTransaction(tx);
+
     final debt = DebtModel(
       id: const Uuid().v4(),
       personName: _nameController.text.trim(),
@@ -301,8 +332,9 @@ class _AddDebtSheetState extends ConsumerState<_AddDebtSheet> {
       date: _date,
       dueDate: _dueDate,
       note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
+      initialTransactionId: txId,
     );
-    ref.read(debtProvider.notifier).add(debt);
-    Navigator.pop(context);
+    await ref.read(debtProvider.notifier).add(debt);
+    if (mounted) Navigator.pop(context);
   }
 }

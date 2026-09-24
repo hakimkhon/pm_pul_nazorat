@@ -8,6 +8,7 @@ import '../../models/transaction_model.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/thousands_formatter.dart';
 import '../../core/utils/budget_alert_checker.dart';
+import '../../core/utils/balance_guard.dart';
 
 class AddTransactionScreen extends ConsumerStatefulWidget {
   final TransactionModel? existing;
@@ -172,6 +173,16 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     if (_selectedCategoryId == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Iltimos, bo'limni tanlang")));
       return;
+    }
+
+    if (_type == 'expense') {
+      final availableBalance = calculateCurrentBalance(ref, excludeTransactionId: widget.existing?.id);
+      if (amount > availableBalance) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Balansingizda yetarli mablag' yo'q. Joriy balans: ${NumberFormat("#,##0").format(availableBalance)} so'm")),
+        );
+        return;
+      }
     }
 
     final transaction = TransactionModel(

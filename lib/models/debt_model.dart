@@ -16,7 +16,10 @@ class DebtPaymentModel {
   @HiveField(3)
   String? note;
 
-  DebtPaymentModel({required this.id, required this.amount, required this.date, this.note});
+  @HiveField(4)
+  String? transactionId; // shu to'lov uchun yaratilgan tranzaksiya id'si
+
+  DebtPaymentModel({required this.id, required this.amount, required this.date, this.note, this.transactionId});
 }
 
 @HiveType(typeId: 4)
@@ -48,6 +51,9 @@ class DebtModel extends HiveObject {
   @HiveField(8)
   bool remindedOverdue;
 
+  @HiveField(9)
+  String? initialTransactionId; // qarz yaratilganda avtomatik qo'shilgan tranzaksiya id'si
+
   DebtModel({
     required this.id,
     required this.personName,
@@ -58,6 +64,7 @@ class DebtModel extends HiveObject {
     this.note,
     List<DebtPaymentModel>? payments,
     this.remindedOverdue = false,
+    this.initialTransactionId,
   }) : payments = payments ?? [];
 
   double get paidAmount => payments.fold(0.0, (s, p) => s + p.amount);

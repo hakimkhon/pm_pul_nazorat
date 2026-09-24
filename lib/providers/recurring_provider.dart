@@ -15,6 +15,11 @@ class RecurringNotifier extends StateNotifier<List<RecurringTransactionModel>> {
     refresh();
   }
 
+  Future<void> update(RecurringTransactionModel model) async {
+    await _repo.update(model);
+    refresh();
+  }
+
   Future<void> toggleActive(RecurringTransactionModel model, bool value) async {
     model.isActive = value;
     await _repo.update(model);

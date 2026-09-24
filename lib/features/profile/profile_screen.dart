@@ -150,6 +150,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         Switch(value: ref.watch(budgetAlertsEnabledProvider), onChanged: (v) => ref.read(budgetAlertsEnabledProvider.notifier).setValue(v)),
                       ],
                     ),
+                    const Divider(height: 20),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          await NotificationService.requestPermission();
+                          await NotificationService.showTestRecurringNotification();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sinov bildirishnomasi yuborildi — bildirishnomalar panelini tekshiring')));
+                          }
+                        },
+                        icon: const Icon(Icons.notifications_active_outlined, size: 18),
+                        label: const Text('Bildirishnomani sinab ko\'rish'),
+                      ),
+                    ),
                   ],
                 ),
               ),

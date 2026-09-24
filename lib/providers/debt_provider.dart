@@ -26,8 +26,8 @@ class DebtNotifier extends StateNotifier<List<DebtModel>> {
     refresh();
   }
 
-  Future<void> addPayment(DebtModel debt, double amount, {String? note}) async {
-    final payment = DebtPaymentModel(id: const Uuid().v4(), amount: amount, date: DateTime.now(), note: note);
+  Future<void> addPayment(DebtModel debt, double amount, {String? note, String? transactionId}) async {
+    final payment = DebtPaymentModel(id: const Uuid().v4(), amount: amount, date: DateTime.now(), note: note, transactionId: transactionId);
     await _repo.addPayment(debt, payment);
     refresh();
   }

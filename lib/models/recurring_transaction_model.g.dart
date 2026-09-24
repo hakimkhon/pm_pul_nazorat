@@ -24,7 +24,7 @@ class RecurringTransactionModelAdapter
       type: fields[3] as String,
       frequency: fields[4] as String,
       startDate: fields[5] as DateTime,
-      lastGeneratedDate: fields[6] as DateTime,
+      nextOccurrence: fields[6] as DateTime,
       note: fields[7] as String?,
       source: fields[8] as String?,
       isActive: fields[9] as bool,
@@ -48,7 +48,7 @@ class RecurringTransactionModelAdapter
       ..writeByte(5)
       ..write(obj.startDate)
       ..writeByte(6)
-      ..write(obj.lastGeneratedDate)
+      ..write(obj.nextOccurrence)
       ..writeByte(7)
       ..write(obj.note)
       ..writeByte(8)

@@ -6,6 +6,8 @@ import '../../providers/recurring_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../models/recurring_transaction_model.dart';
 import '../../core/utils/thousands_formatter.dart';
+import '../../core/utils/recurring_scheduler.dart';
+import '../../data/notification_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/shared_widgets.dart';
 
@@ -20,15 +22,7 @@ class RecurringScreen extends ConsumerWidget {
     }
   }
 
-  DateTime _nextOccurrence(RecurringTransactionModel r) {
-    switch (r.frequency) {
-      case 'daily': return r.lastGeneratedDate.add(const Duration(days: 1));
-      case 'weekly': return r.lastGeneratedDate.add(const Duration(days: 7));
-      default:
-        final d = r.lastGeneratedDate;
-        return d.month == 12 ? DateTime(d.year + 1, 1, d.day) : DateTime(d.year, d.month + 1, d.day);
-    }
-  }
+  DateTime _nextOccurrence(RecurringTransactionModel r) => r.nextOccurrence;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -97,7 +91,10 @@ class RecurringScreen extends ConsumerWidget {
                                       ],
                                     ),
                                   ),
-                                  Switch(value: r.isActive, onChanged: (v) => ref.read(recurringProvider.notifier).toggleActive(r, v)),
+                                  Switch(value: r.isActive, onChanged: (v) async {
+                                    await ref.read(recurringProvider.notifier).toggleActive(r, v);
+                                    await scheduleRecurringNotification(r);
+                                  }),
                                 ],
                               ),
                               const Divider(height: 16),
@@ -108,7 +105,7 @@ class RecurringScreen extends ConsumerWidget {
                                     children: [
                                       Icon(Icons.event_repeat_rounded, size: 14, color: AppTheme.mutedText(context)),
                                       const SizedBox(width: 4),
-                                      Text(r.isActive ? 'Keyingisi: ${DateFormat('dd.MM.yyyy').format(next)}' : 'To\'xtatilgan', style: Theme.of(context).textTheme.labelSmall),
+                                      Text(r.isActive ? 'Keyingisi: ${DateFormat('dd.MM.yyyy HH:mm').format(next)}' : 'To\'xtatilgan', style: Theme.of(context).textTheme.labelSmall),
                                     ],
                                   ),
                                   Row(
@@ -141,7 +138,7 @@ class RecurringScreen extends ConsumerWidget {
         content: const Text('Bu takrorlanuvchi qoidani o\'chirmoqchimisiz? (Avval yaratilgan tranzaksiyalar saqlanib qoladi)'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Bekor qilish')),
-          TextButton(onPressed: () { ref.read(recurringProvider.notifier).remove(id); Navigator.pop(context); }, child: Text("O'chirish", style: TextStyle(color: AppTheme.brandExpense(context)))),
+          TextButton(onPressed: () { NotificationService.cancelById(id.hashCode); ref.read(recurringProvider.notifier).remove(id); Navigator.pop(context); }, child: Text("O'chirish", style: TextStyle(color: AppTheme.brandExpense(context)))),
         ],
       ),
     );
@@ -167,6 +164,7 @@ class _AddRecurringSheetState extends ConsumerState<_AddRecurringSheet> {
   late final TextEditingController _amountController;
   late final TextEditingController _sourceController;
   late DateTime _startDate;
+  late TimeOfDay _startTime;
 
   @override
   void initState() {
@@ -178,6 +176,7 @@ class _AddRecurringSheetState extends ConsumerState<_AddRecurringSheet> {
     _amountController = TextEditingController(text: e != null ? NumberFormat("#,##0").format(e.amount) : '');
     _sourceController = TextEditingController(text: e?.source ?? '');
     _startDate = e?.startDate ?? DateTime.now();
+    _startTime = TimeOfDay.fromDateTime(e?.nextOccurrence ?? e?.startDate ?? DateTime.now());
   }
 
   @override
@@ -260,6 +259,16 @@ class _AddRecurringSheetState extends ConsumerState<_AddRecurringSheet> {
                     if (picked != null) setState(() => _startDate = picked);
                   },
                 ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('Vaqt (bildirishnoma shu vaqtda keladi)', style: TextStyle(color: onSurface)),
+                  subtitle: Text(_startTime.format(context)),
+                  trailing: const Icon(Icons.access_time),
+                  onTap: () async {
+                    final picked = await showTimePicker(context: context, initialTime: _startTime);
+                    if (picked != null) setState(() => _startTime = picked);
+                  },
+                ),
                 TextField(controller: _sourceController, style: TextStyle(color: onSurface), decoration: const InputDecoration(labelText: 'Nomi (masalan: Ish haqi, Kommunal)')),
                 const SizedBox(height: 20),
                 SizedBox(width: double.infinity, height: 50, child: ElevatedButton(onPressed: _save, child: Text(isEditing ? 'Saqlash' : "Qo'shish"))),
@@ -271,7 +280,7 @@ class _AddRecurringSheetState extends ConsumerState<_AddRecurringSheet> {
     );
   }
 
-  void _save() {
+  void _save() async {
     final amount = ThousandsFormatter.parse(_amountController.text);
     if (amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Iltimos, to'g'ri summa kiriting")));
@@ -282,23 +291,29 @@ class _AddRecurringSheetState extends ConsumerState<_AddRecurringSheet> {
       return;
     }
 
+    final combinedDateTime = DateTime(_startDate.year, _startDate.month, _startDate.day, _startTime.hour, _startTime.minute);
+    await NotificationService.requestPermission();
+
     if (widget.existing != null) {
       final updated = widget.existing!;
       updated.amount = amount;
       updated.categoryId = _categoryId!;
       updated.type = _type;
       updated.frequency = _frequency;
-      updated.startDate = _startDate;
+      updated.startDate = combinedDateTime;
+      updated.nextOccurrence = combinedDateTime;
       updated.source = _sourceController.text.trim().isEmpty ? null : _sourceController.text.trim();
-      ref.read(recurringProvider.notifier).add(updated);
+      await ref.read(recurringProvider.notifier).update(updated);
+      await scheduleRecurringNotification(updated);
     } else {
       final model = RecurringTransactionModel(
         id: const Uuid().v4(), amount: amount, categoryId: _categoryId!, type: _type, frequency: _frequency,
-        startDate: _startDate, lastGeneratedDate: _startDate.subtract(const Duration(days: 1)),
+        startDate: combinedDateTime, nextOccurrence: combinedDateTime,
         source: _sourceController.text.trim().isEmpty ? null : _sourceController.text.trim(),
       );
-      ref.read(recurringProvider.notifier).add(model);
+      await ref.read(recurringProvider.notifier).add(model);
+      await scheduleRecurringNotification(model);
     }
-    Navigator.pop(context);
+    if (mounted) Navigator.pop(context);
   }
 }

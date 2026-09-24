@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lottie/lottie.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/recurring_generator.dart';
+import '../../core/utils/recurring_scheduler.dart';
 import '../../core/utils/debt_alert_checker.dart';
+import '../../data/notification_service.dart';
 import '../main_navigation.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -20,10 +21,29 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
   void initState() {
     super.initState();
     _fadeController = AnimationController(vsync: this, duration: const Duration(milliseconds: 500))..forward();
-    // Ilova ochilganda muddati kelgan takrorlanuvchi tranzaksiyalarni yaratamiz
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      generateDueRecurringTransactions(ref);
-      checkDebtOverdueAlerts(ref);
+
+    // Bildirishnoma tugmasi bosilib, dastur ochiq/fonda bo'lganda kelgan javoblarni tinglaymiz
+    NotificationService.responseStream.stream.listen((response) {
+      final payload = response.payload;
+      final actionId = response.actionId;
+      if (payload != null && actionId != null) {
+        handleRecurringAction(ref, payload, actionId);
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Bildirishnoma ruxsatini darhol so'raymiz (Android 13+, aniq vaqt ruxsati)
+      await NotificationService.requestPermission();
+
+      // Agar dastur bildirishnoma tugmasi bosilib OCHILGAN bo'lsa (avval yopiq edi)
+      final launchResponse = await NotificationService.getLaunchResponse();
+      if (launchResponse?.payload != null && launchResponse?.actionId != null) {
+        await handleRecurringAction(ref, launchResponse!.payload!, launchResponse.actionId!);
+      }
+
+      // Barcha faol takrorlanuvchi qoidalar uchun bildirishnomalarni qayta rejalashtiramiz
+      await rescheduleAllRecurring(ref);
+      await checkDebtOverdueAlerts(ref);
     });
   }
 
@@ -87,7 +107,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
               ),
               const SizedBox(height: 6),
               Text(
-                'Pulingiz nazoratingiz ostida',
+                'Pulingiz nazoratda',
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
               ),
             ],

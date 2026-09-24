@@ -46,6 +46,7 @@ class CategoryAvatar extends StatelessWidget {
 
 /// Bitta tranzaksiya qatori — bosh sahifa, kategoriya tafsiloti, qidiruv natijasida ishlatiladi.
 /// onEdit/onDelete berilsa, chapga surilganda ular ko'rinadi (swipe-to-action).
+/// Bosilganda (tap) to'liq tafsilot ochiladi.
 class TransactionTile extends StatefulWidget {
   final TransactionModel transaction;
   final CategoryModel category;
@@ -66,8 +67,22 @@ class TransactionTile extends StatefulWidget {
   State<TransactionTile> createState() => _TransactionTileState();
 }
 
+/// "Bugun 14:32", "Kecha 09:15", yoki "23.09 18:03" ko'rinishida chiqaradi
+String formatRelativeDateTime(DateTime date) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final target = DateTime(date.year, date.month, date.day);
+  final diff = today.difference(target).inDays;
+  final time = DateFormat('HH:mm').format(date);
+
+  if (diff == 0) return 'Bugun $time';
+  if (diff == 1) return 'Kecha $time';
+  return '${DateFormat('dd.MM').format(date)} $time';
+}
+
 class _TransactionTileState extends State<TransactionTile> {
   double _dragExtent = 0;
+  bool _expanded = false;
   static const double _actionWidth = 60;
 
   double get _maxDrag => (widget.onEdit != null ? _actionWidth : 0) + (widget.onDelete != null ? _actionWidth : 0);
@@ -80,45 +95,83 @@ class _TransactionTileState extends State<TransactionTile> {
   Widget build(BuildContext context) {
     final t = widget.transaction;
     final category = widget.category;
-    final subtitle = (t.note != null && t.note!.isNotEmpty)
-        ? t.note!
-        : (widget.showCategoryAsSubtitle ? category.name : DateFormat('dd.MM.yyyy').format(t.date));
+    // Izoh bo'lmasa — har doim bo'lim nomi ko'rsatiladi (ikkala ekranda ham bir xil)
+    final subtitle = (t.note != null && t.note!.isNotEmpty) ? t.note! : category.name;
 
     final content = AppCard(
       padding: const EdgeInsets.all(12),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CategoryAvatar(category: category),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  t.source ?? category.name,
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(subtitle, style: TextStyle(fontSize: 12, color: AppTheme.mutedText(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          Row(
             children: [
-              MoneyText(amount: t.amount, type: t.type),
-              const SizedBox(height: 2),
-              Text(DateFormat('HH:mm').format(t.date), style: TextStyle(fontSize: 11, color: AppTheme.mutedText(context))),
+              CategoryAvatar(category: category),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      t.source ?? category.name,
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: TextStyle(fontSize: 12, color: AppTheme.mutedText(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  MoneyText(amount: t.amount, type: t.type),
+                  const SizedBox(height: 2),
+                  Text(formatRelativeDateTime(t.date), style: TextStyle(fontSize: 11, color: AppTheme.mutedText(context))),
+                ],
+              ),
             ],
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            child: !_expanded
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Divider(height: 1),
+                        const SizedBox(height: 10),
+                        _DetailRow(icon: Icons.category_outlined, label: "Bo'lim", value: category.name),
+                        _DetailRow(icon: Icons.swap_vert_rounded, label: 'Turi', value: t.type == 'income' ? 'Kirim' : 'Chiqim'),
+                        _DetailRow(icon: Icons.event_outlined, label: 'Sana va vaqt', value: DateFormat('dd.MM.yyyy, HH:mm').format(t.date)),
+                        _DetailRow(icon: Icons.payments_outlined, label: 'Summa', value: '${NumberFormat("#,##0").format(t.amount)} so\'m'),
+                        if (t.source != null && t.source!.isNotEmpty) _DetailRow(icon: Icons.place_outlined, label: 'Manba', value: t.source!),
+                        if (t.note != null && t.note!.isNotEmpty) _DetailRow(icon: Icons.notes_rounded, label: 'Izoh', value: t.note!),
+                      ],
+                    ),
+                  ),
           ),
         ],
       ),
     );
 
+    Widget tappable = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (_dragExtent != 0) {
+          _close();
+        } else {
+          setState(() => _expanded = !_expanded);
+        }
+      },
+      child: content,
+    );
+
     if (_maxDrag == 0) {
-      return Padding(padding: const EdgeInsets.only(bottom: 10), child: content);
+      return Padding(padding: const EdgeInsets.only(bottom: 10), child: tappable);
     }
 
     return Padding(
@@ -141,16 +194,38 @@ class _TransactionTileState extends State<TransactionTile> {
             GestureDetector(
               onHorizontalDragUpdate: (d) => setState(() => _dragExtent = (_dragExtent + d.delta.dx).clamp(-_maxDrag, 0.0)),
               onHorizontalDragEnd: (d) => setState(() => _dragExtent = _dragExtent < -_maxDrag / 2 ? -_maxDrag : 0),
-              onTap: _dragExtent != 0 ? _close : null,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOut,
                 transform: Matrix4.translationValues(_dragExtent, 0, 0),
-                child: content,
+                child: tappable,
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _DetailRow({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 15, color: AppTheme.mutedText(context)),
+          const SizedBox(width: 8),
+          SizedBox(width: 90, child: Text(label, style: TextStyle(fontSize: 12, color: AppTheme.mutedText(context)))),
+          Expanded(child: Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface))),
+        ],
       ),
     );
   }

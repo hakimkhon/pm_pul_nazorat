@@ -289,7 +289,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              '${NumberFormat("#,##0").format(entry.value)}',
+                              NumberFormat("#,##0").format(entry.value),
                               style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 13,
