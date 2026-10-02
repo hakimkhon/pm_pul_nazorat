@@ -6,6 +6,9 @@ import 'data/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/splash/splash_screen.dart';
 import 'providers/settings_provider.dart';
+import 'dart:async';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'core/utils/recurring_scheduler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,11 +19,42 @@ void main() async {
   runApp(const ProviderScope(child: MyApp()));
 }
 
-class MyApp extends ConsumerWidget {
+class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
+  @override
+  ConsumerState<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends ConsumerState<MyApp> {
+  StreamSubscription<NotificationResponse>? _sub;
+
+    @override
+  void initState() {
+    super.initState();
+    _sub = NotificationService.responseStream.stream.listen((response) {
+      final payload = response.payload;
+      final actionId = response.actionId;
+      if (payload != null && actionId != null) {
+        handleRecurringAction(ref, payload, actionId);
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final launch = await NotificationService.getLaunchResponse();
+      if (launch?.payload != null && launch?.actionId != null) {
+        await handleRecurringAction(ref, launch!.payload!, launch.actionId!);
+      }
+    });
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
     final fontScale = ref.watch(fontScaleProvider);
 

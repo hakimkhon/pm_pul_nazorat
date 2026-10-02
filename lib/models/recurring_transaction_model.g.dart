@@ -28,13 +28,14 @@ class RecurringTransactionModelAdapter
       note: fields[7] as String?,
       source: fields[8] as String?,
       isActive: fields[9] as bool,
+      snoozeUntil: fields[10] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter writer, RecurringTransactionModel obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -54,7 +55,9 @@ class RecurringTransactionModelAdapter
       ..writeByte(8)
       ..write(obj.source)
       ..writeByte(9)
-      ..write(obj.isActive);
+      ..write(obj.isActive)
+      ..writeByte(10)
+      ..write(obj.snoozeUntil);
   }
 
   @override

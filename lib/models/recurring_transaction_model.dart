@@ -34,6 +34,9 @@ class RecurringTransactionModel extends HiveObject {
   @HiveField(9)
   bool isActive;
 
+  @HiveField(10)
+  DateTime? snoozeUntil;
+
   RecurringTransactionModel({
     required this.id,
     required this.amount,
@@ -45,5 +48,6 @@ class RecurringTransactionModel extends HiveObject {
     this.note,
     this.source,
     this.isActive = true,
+    this.snoozeUntil
   });
 }

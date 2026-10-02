@@ -23,23 +23,23 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
     _fadeController = AnimationController(vsync: this, duration: const Duration(milliseconds: 500))..forward();
 
     // Bildirishnoma tugmasi bosilib, dastur ochiq/fonda bo'lganda kelgan javoblarni tinglaymiz
-    NotificationService.responseStream.stream.listen((response) {
-      final payload = response.payload;
-      final actionId = response.actionId;
-      if (payload != null && actionId != null) {
-        handleRecurringAction(ref, payload, actionId);
-      }
-    });
+    // NotificationService.responseStream.stream.listen((response) {
+    //   final payload = response.payload;
+    //   final actionId = response.actionId;
+    //   if (payload != null && actionId != null) {
+    //     handleRecurringAction(ref, payload, actionId);
+    //   }
+    // });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Bildirishnoma ruxsatini darhol so'raymiz (Android 13+, aniq vaqt ruxsati)
       await NotificationService.requestPermission();
 
       // Agar dastur bildirishnoma tugmasi bosilib OCHILGAN bo'lsa (avval yopiq edi)
-      final launchResponse = await NotificationService.getLaunchResponse();
-      if (launchResponse?.payload != null && launchResponse?.actionId != null) {
-        await handleRecurringAction(ref, launchResponse!.payload!, launchResponse.actionId!);
-      }
+      // final launchResponse = await NotificationService.getLaunchResponse();
+      // if (launchResponse?.payload != null && launchResponse?.actionId != null) {
+      //   await handleRecurringAction(ref, launchResponse!.payload!, launchResponse.actionId!);
+      // }
 
       // Barcha faol takrorlanuvchi qoidalar uchun bildirishnomalarni qayta rejalashtiramiz
       await rescheduleAllRecurring(ref);
@@ -107,7 +107,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
               ),
               const SizedBox(height: 6),
               Text(
-                'Pulingiz nazoratda',
+                'Pulingiz nazoratingiz ostida',
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
               ),
             ],

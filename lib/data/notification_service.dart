@@ -9,7 +9,7 @@ class NotificationService {
   static bool _initialized = false;
 
   /// Bildirishnoma tugmasi bosilganda (dastur ochiq/fonda bo'lganda) shu yerga keladi
-  static final StreamController<NotificationResponse> responseStream = StreamController.broadcast();
+  static final StreamController<NotificationResponse> responseStream = StreamController();
 
   static Future<void> init() async {
     if (_initialized) return;
@@ -148,13 +148,24 @@ class NotificationService {
           importance: Importance.max,
           priority: Priority.high,
           actions: [
-            AndroidNotificationAction('done', 'Bajarildi', showsUserInterface: false),
-            AndroidNotificationAction('snooze', 'Keyinroq (2soat)', showsUserInterface: false),
-            AndroidNotificationAction('cancel_action', "Bekor qilish", showsUserInterface: false, cancelNotification: true),
+            AndroidNotificationAction('done', 'Bajarildi', showsUserInterface: true),
+            AndroidNotificationAction('snooze', 'Keyinroq (2soat)', showsUserInterface: true),
+            AndroidNotificationAction('cancel_action', "Bekor qilish", showsUserInterface: true, cancelNotification: true),
           ],
         ),
       ),
       payload: 'test',
+    );
+  }
+
+  static Future<void> showInfo(String title, String body) async {
+    await _plugin.show(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails('info', "Ma'lumot", importance: Importance.defaultImportance),
+      ),
     );
   }
 
