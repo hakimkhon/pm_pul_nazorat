@@ -309,22 +309,28 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: AppTheme.brandGold(context).withValues(alpha: 0.15), shape: BoxShape.circle),
-            child: Icon(icon, color: AppTheme.brandGold(context), size: 30),
-          ),
-          const SizedBox(height: 14),
-          Text(title, style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
-          if (subtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(subtitle!, style: Theme.of(context).textTheme.labelSmall, textAlign: TextAlign.center),
+    // Eni bo'yicha to'liq, balandligi esa faqat mazmuniga teng (mainAxisSize.min) —
+    // aks holda Expanded/Center ichida karta ekranning pastigacha cho'zilib ketardi.
+    return SizedBox(
+      width: double.infinity,
+      child: AppCard(
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: AppTheme.brandGold(context).withValues(alpha: 0.15), shape: BoxShape.circle),
+              child: Icon(icon, color: AppTheme.brandGold(context), size: 26),
+            ),
+            const SizedBox(height: 10),
+            Text(title, style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(subtitle!, style: Theme.of(context).textTheme.labelSmall, textAlign: TextAlign.center),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

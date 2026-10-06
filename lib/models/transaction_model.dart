@@ -25,6 +25,10 @@ class TransactionModel extends HiveObject {
   @HiveField(6)
   String? source;
 
+  /// Qaysi takrorlanuvchi qoida asosida yaratilgan (bildirishnomadan "Bajarildi" bosilganda)
+  @HiveField(7)
+  String? recurringId;
+
   TransactionModel({
     required this.id,
     required this.amount,
@@ -33,6 +37,7 @@ class TransactionModel extends HiveObject {
     required this.date,
     this.note,
     this.source,
+    this.recurringId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -43,6 +48,7 @@ class TransactionModel extends HiveObject {
         'date': date.toIso8601String(),
         'note': note,
         'source': source,
+        'recurringId': recurringId,
       };
 
   factory TransactionModel.fromJson(Map<String, dynamic> json) => TransactionModel(
@@ -53,5 +59,6 @@ class TransactionModel extends HiveObject {
         date: DateTime.parse(json['date']),
         note: json['note'],
         source: json['source'],
+        recurringId: json['recurringId'],
       );
 }

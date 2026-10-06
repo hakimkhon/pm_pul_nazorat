@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/recurring_scheduler.dart';
 import '../../core/utils/debt_alert_checker.dart';
 import '../../data/notification_service.dart';
+import '../../core/utils/launch_gate.dart';
 import '../main_navigation.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -40,6 +41,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
       // if (launchResponse?.payload != null && launchResponse?.actionId != null) {
       //   await handleRecurringAction(ref, launchResponse!.payload!, launchResponse.actionId!);
       // }
+
+      // Bosilgan bildirishnoma tugmasi (agar bo'lsa) avval qayta ishlansin — keyin qayta rejalashtiramiz
+      await launchHandled.future;
 
       // Barcha faol takrorlanuvchi qoidalar uchun bildirishnomalarni qayta rejalashtiramiz
       await rescheduleAllRecurring(ref);

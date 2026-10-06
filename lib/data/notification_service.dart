@@ -96,6 +96,8 @@ class NotificationService {
     required DateTime scheduledDate,
     required String payload,
   }) async {
+    // MUHIM: showsUserInterface: true — tugma bosilganda callback ASOSIY isolate'da (Hive ochiq) ishlaydi.
+    // false bo'lsa, callback fon isolate'iga tushadi va hech narsa sodir bo'lmaydi.
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
         'recurring_confirm',
@@ -103,9 +105,9 @@ class NotificationService {
         importance: Importance.max,
         priority: Priority.high,
         actions: [
-          AndroidNotificationAction('done', 'Bajarildi', showsUserInterface: false),
-          AndroidNotificationAction('snooze', 'Keyinroq (2soat)', showsUserInterface: false),
-          AndroidNotificationAction('cancel_action', "Bekor qilish", showsUserInterface: false, cancelNotification: true),
+          AndroidNotificationAction('done', 'Bajarildi', showsUserInterface: true, cancelNotification: true),
+          AndroidNotificationAction('snooze', 'Keyinroq (2soat)', showsUserInterface: true, cancelNotification: true),
+          AndroidNotificationAction('cancel_action', "Bekor qilish", showsUserInterface: true, cancelNotification: true),
         ],
       ),
     );
@@ -148,8 +150,8 @@ class NotificationService {
           importance: Importance.max,
           priority: Priority.high,
           actions: [
-            AndroidNotificationAction('done', 'Bajarildi', showsUserInterface: true),
-            AndroidNotificationAction('snooze', 'Keyinroq (2soat)', showsUserInterface: true),
+            AndroidNotificationAction('done', 'Bajarildi', showsUserInterface: true, cancelNotification: true),
+            AndroidNotificationAction('snooze', 'Keyinroq (2soat)', showsUserInterface: true, cancelNotification: true),
             AndroidNotificationAction('cancel_action', "Bekor qilish", showsUserInterface: true, cancelNotification: true),
           ],
         ),
@@ -165,6 +167,24 @@ class NotificationService {
       body: body,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails('info', "Ma'lumot", importance: Importance.defaultImportance),
+      ),
+    );
+  }
+
+  /// Muhim ogohlantirish — ekranning tepasida chiqadi (masalan, mablag' yetarli emas)
+  static Future<void> showAlert(String title, String body) async {
+    await _plugin.show(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'alerts',
+          'Muhim ogohlantirishlar',
+          importance: Importance.max,
+          priority: Priority.high,
+          styleInformation: BigTextStyleInformation(body),
+        ),
       ),
     );
   }

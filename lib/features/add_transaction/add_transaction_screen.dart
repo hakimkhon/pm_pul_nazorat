@@ -136,8 +136,9 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
               TextField(
                 controller: _noteController,
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-                decoration: const InputDecoration(labelText: 'Izoh (ixtiyoriy)'),
-                maxLines: 2,
+                decoration: const InputDecoration(labelText: 'Izoh (ixtiyoriy)', isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 10)),
+                minLines: 1,
+                maxLines: 3,
               ),
               const SizedBox(height: 12), // Pastdagi tugma bilan urilib qolmasligi uchun kichik bo'shliq
             ],
@@ -193,6 +194,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
       date: DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _selectedTime.hour, _selectedTime.minute),
       note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
       source: _sourceController.text.trim().isEmpty ? null : _sourceController.text.trim(),
+      recurringId: widget.existing?.recurringId,
     );
 
     if (widget.existing != null) {

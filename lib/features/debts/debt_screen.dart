@@ -275,7 +275,7 @@ class _AddDebtSheetState extends ConsumerState<_AddDebtSheet> {
                     if (picked != null) setState(() => _dueDate = picked);
                   },
                 ),
-                TextField(controller: _noteController, style: TextStyle(color: onSurface), decoration: const InputDecoration(labelText: 'Izoh (ixtiyoriy)'), maxLines: 2),
+                TextField(controller: _noteController, style: TextStyle(color: onSurface), decoration: const InputDecoration(labelText: 'Izoh (ixtiyoriy)', isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 10)), minLines: 1, maxLines: 3),
                 const SizedBox(height: 20),
                 SizedBox(width: double.infinity, height: 50, child: ElevatedButton(onPressed: _save, child: const Text("Qo'shish"))),
               ],

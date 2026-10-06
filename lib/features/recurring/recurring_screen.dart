@@ -4,39 +4,116 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../providers/recurring_provider.dart';
 import '../../providers/category_provider.dart';
+import '../../providers/transaction_provider.dart';
 import '../../models/recurring_transaction_model.dart';
 import '../../core/utils/thousands_formatter.dart';
 import '../../core/utils/recurring_scheduler.dart';
+import '../../core/utils/balance_guard.dart';
+import '../../core/utils/app_keys.dart';
 import '../../data/notification_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/shared_widgets.dart';
 
-/// Har xil chastotadagi qoidalarni solishtirish uchun — yiliga nechta marta takrorlanadi
-double _occurrencesPerYear(String frequency) {
-  switch (frequency) {
-    case 'daily':
-      return 365;
+const _monthNames = [
+  'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
+  'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr',
+];
+
+/// Tanlangan davr: [start, end) — start 00:00 dan end 00:00 gacha
+class _Range {
+  final DateTime start;
+  final DateTime end;
+  const _Range(this.start, this.end);
+
+  bool contains(DateTime d) => !d.isBefore(start) && d.isBefore(end);
+}
+
+_Range _rangeFor(String tab, DateTime anchor) {
+  final d = DateTime(anchor.year, anchor.month, anchor.day);
+  switch (tab) {
     case 'weekly':
-      return 52;
+      final start = d.subtract(Duration(days: d.weekday - 1)); // dushanba
+      return _Range(start, start.add(const Duration(days: 7)));
+    case 'yearly':
+      return _Range(DateTime(d.year), DateTime(d.year + 1));
     case 'monthly':
     default:
-      return 12;
+      return _Range(DateTime(d.year, d.month), DateTime(d.year, d.month + 1));
   }
 }
 
-/// Qoidaning tanlangan davr (hafta/oy/yil) uchun ekvivalent summasi
-double _projectedAmount(RecurringTransactionModel r, String periodTab) {
-  final perYear = r.amount * _occurrencesPerYear(r.frequency);
-  switch (periodTab) {
+DateTime _shiftAnchor(DateTime a, String tab, int dir) {
+  switch (tab) {
     case 'weekly':
-      return perYear / 52;
-    case 'monthly':
-      return perYear / 12;
+      return a.add(Duration(days: 7 * dir));
     case 'yearly':
+      return DateTime(a.year + dir, 1, 1);
+    case 'monthly':
     default:
-      return perYear;
+      return DateTime(a.year, a.month + dir, 1);
   }
 }
+
+String _rangeLabel(String tab, _Range r) {
+  switch (tab) {
+    case 'weekly':
+      final last = r.end.subtract(const Duration(days: 1));
+      return '${DateFormat('dd.MM').format(r.start)} – ${DateFormat('dd.MM.yyyy').format(last)}';
+    case 'yearly':
+      return '${r.start.year}';
+    case 'monthly':
+    default:
+      return '${_monthNames[r.start.month - 1]} ${r.start.year}';
+  }
+}
+
+int _daysBetween(DateTime a, DateTime b) =>
+    DateTime.utc(b.year, b.month, b.day).difference(DateTime.utc(a.year, a.month, a.day)).inDays;
+
+/// Qoida tanlangan davrda necha marta sodir bo'lishi (boshlanish sanasidan hisoblanadi)
+int _occurrencesIn(RecurringTransactionModel r, _Range range) {
+  final first = DateTime(r.startDate.year, r.startDate.month, r.startDate.day);
+
+  switch (r.frequency) {
+    case 'once':
+      return range.contains(r.nextOccurrence) ? 1 : 0;
+
+    case 'daily':
+      final from = range.start.isAfter(first) ? range.start : first;
+      final n = _daysBetween(from, range.end);
+      return n > 0 ? n : 0;
+
+    case 'weekly':
+      var firstInRange = first;
+      if (range.start.isAfter(first)) {
+        final gap = _daysBetween(first, range.start);
+        firstInRange = first.add(Duration(days: ((gap + 6) ~/ 7) * 7));
+      }
+      if (!firstInRange.isBefore(range.end)) return 0;
+      return (_daysBetween(firstInRange, range.end) - 1) ~/ 7 + 1;
+
+    case 'monthly':
+    default:
+      var count = 0;
+      var y = range.start.year;
+      var m = range.start.month;
+      while (DateTime(y, m).isBefore(range.end)) {
+        final lastDay = DateTime(y, m + 1, 0).day;
+        final day = first.day > lastDay ? lastDay : first.day;
+        final occ = DateTime(y, m, day);
+        if (!occ.isBefore(first) && range.contains(occ)) count++;
+        m++;
+        if (m > 12) {
+          m = 1;
+          y++;
+        }
+      }
+      return count;
+  }
+}
+
+/// Qoidaning tanlangan davrdagi jami summasi
+double _periodAmount(RecurringTransactionModel r, _Range range) => r.amount * _occurrencesIn(r, range);
 
 String _frequencyLabel(String f) {
   switch (f) {
@@ -44,9 +121,27 @@ String _frequencyLabel(String f) {
       return 'Har kuni';
     case 'weekly':
       return 'Har hafta';
+    case 'once':
+      return 'Bir marta';
     default:
       return 'Har oy';
   }
+}
+
+String _signed(double v) {
+  final text = NumberFormat("#,##0").format(v.abs());
+  if (v > 0) return '+$text';
+  if (v < 0) return '−$text';
+  return text;
+}
+
+void _openSheet(BuildContext context, {RecurringTransactionModel? existing}) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _AddRecurringSheet(existing: existing),
+  );
 }
 
 class RecurringScreen extends ConsumerStatefulWidget {
@@ -58,91 +153,143 @@ class RecurringScreen extends ConsumerStatefulWidget {
 
 class _RecurringScreenState extends ConsumerState<RecurringScreen> {
   String _periodTab = 'monthly'; // 'weekly' | 'monthly' | 'yearly'
+  DateTime _anchor = DateTime.now(); // tanlangan davr shu sanani o'z ichiga oladi
 
   @override
   Widget build(BuildContext context) {
-      final allRules = ref.watch(recurringProvider);
-      final categories = ref.watch(categoryProvider);
-      final activeRules = allRules.where((r) => r.isActive).toList();
+    final allRules = ref.watch(recurringProvider);
+    final categories = ref.watch(categoryProvider);
+    final transactions = ref.watch(transactionProvider);
+    final activeRules = allRules.where((r) => r.isActive).toList();
+    final range = _rangeFor(_periodTab, _anchor);
+    final now = DateTime.now();
+    final isCurrent = range.contains(now);
 
-      final incomeRules = allRules.where((r) => r.type == 'income').toList()
-        ..sort((a, b) => a.isActive == b.isActive ? a.nextOccurrence.compareTo(b.nextOccurrence) : (a.isActive ? -1 : 1));
-      final expenseRules = allRules.where((r) => r.type == 'expense').toList()
-        ..sort((a, b) => a.isActive == b.isActive ? a.nextOccurrence.compareTo(b.nextOccurrence) : (a.isActive ? -1 : 1));
+    int byDate(RecurringTransactionModel a, RecurringTransactionModel b) =>
+        a.isActive == b.isActive ? a.nextOccurrence.compareTo(b.nextOccurrence) : (a.isActive ? -1 : 1);
+    final incomeRules = allRules.where((r) => r.type == 'income').toList()..sort(byDate);
+    final expenseRules = allRules.where((r) => r.type == 'expense').toList()..sort(byDate);
 
-      final totalIncome = activeRules.where((r) => r.type == 'income').fold(0.0, (s, r) => s + _projectedAmount(r, _periodTab));
-      final totalExpense = activeRules.where((r) => r.type == 'expense').fold(0.0, (s, r) => s + _projectedAmount(r, _periodTab));
+    double sum(Iterable<RecurringTransactionModel> rules, String type) =>
+        rules.where((r) => r.type == type).fold(0.0, (acc, r) => acc + _periodAmount(r, range));
 
-      final periodNoun = {'weekly': 'haftalik', 'monthly': 'oylik', 'yearly': 'yillik'}[_periodTab]!;
+    final totalIncome = sum(activeRules, 'income');
+    final totalExpense = sum(activeRules, 'expense');
+    final allIncome = sum(allRules, 'income');
+    final allExpense = sum(allRules, 'expense');
 
-      return Scaffold(
-        appBar: AppBar(title: const Text('Takrorlanuvchi tranzaksiyalar')),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            EqualSegmentedBar<String>(
-              options: const {'Haftalik': 'weekly', 'Oylik': 'monthly', 'Yillik': 'yearly'},
-              selected: _periodTab,
-              onSelect: (v) => setState(() => _periodTab = v),
-            ),
-            const SizedBox(height: 14),
-            Text('Kutilayotgan $periodNoun natija', style: Theme.of(context).textTheme.labelSmall),
-            const SizedBox(height: 6),
-            AppCard(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+    // Har bir qoida bo'yicha TANLANGAN DAVRDA haqiqatda tasdiqlangan tranzaksiyalar
+    final doneCount = <String, int>{};
+    final doneSum = <String, double>{};
+    for (final t in transactions) {
+      final rid = t.recurringId;
+      if (rid == null || !range.contains(t.date)) continue;
+      doneCount[rid] = (doneCount[rid] ?? 0) + 1;
+      doneSum[rid] = (doneSum[rid] ?? 0) + t.amount;
+    }
+    final periodWord = {'weekly': 'hafta', 'monthly': 'oy', 'yearly': 'yil'}[_periodTab]!;
+    final periodPrefix = '${isCurrent ? 'Bu' : 'Shu'} $periodWord';
+
+    Widget tile(RecurringTransactionModel r, int i) => FadeInItem(
+          index: i,
+          child: _RuleTile(
+            rule: r,
+            range: range,
+            categoryName: _catName(categories, r.categoryId),
+            periodPrefix: periodPrefix,
+            doneCount: doneCount[r.id] ?? 0,
+            doneSum: doneSum[r.id] ?? 0,
+          ),
+        );
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Takrorlanuvchi tranzaksiyalar')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
+        children: [
+          EqualSegmentedBar<String>(
+            options: const {'Haftalik': 'weekly', 'Oylik': 'monthly', 'Yillik': 'yearly'},
+            selected: _periodTab,
+            onSelect: (v) => setState(() => _periodTab = v),
+          ),
+          const SizedBox(height: 4),
+          // Qaysi hafta / oy / yil ekanini tanlash: strelkalar bilan oldinga-orqaga, nomiga bosilsa — joriy davr
+          Row(
+            children: [
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_left_rounded),
+                onPressed: () => setState(() => _anchor = _shiftAnchor(_anchor, _periodTab, -1)),
+              ),
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => setState(() => _anchor = DateTime.now()),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text('Jami kirim', style: Theme.of(context).textTheme.labelSmall),
-                        const SizedBox(height: 4),
-                        Text('${NumberFormat("#,##0").format(totalIncome)} so\'m', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: AppTheme.brandIncome(context))),
+                        Text(_rangeLabel(_periodTab, range), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                        if (!isCurrent) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.brandPrimary(context).withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text('Bugun', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.brandPrimary(context))),
+                          ),
+                        ],
                       ],
                     ),
                   ),
-                  Container(width: 1, height: 36, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1)),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Jami chiqim', style: Theme.of(context).textTheme.labelSmall),
-                          const SizedBox(height: 4),
-                          Text('${NumberFormat("#,##0").format(totalExpense)} so\'m', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: AppTheme.brandExpense(context))),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-
-            if (allRules.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: EmptyState(icon: Icons.event_repeat_rounded, title: "Hali takrorlanuvchi tranzaksiya yo'q", subtitle: 'Pastdagi + tugmasi orqali qo\'shing'),
-              )
-            else ...[
-              SectionTitle('Kirimlar', trailing: Text('${incomeRules.length} ta', style: Theme.of(context).textTheme.labelSmall)),
-              if (incomeRules.isEmpty)
-                Padding(padding: const EdgeInsets.only(bottom: 16), child: Text("Hozircha yo'q", style: Theme.of(context).textTheme.labelSmall))
-              else
-                ...incomeRules.map((r) => FadeInItem(index: incomeRules.indexOf(r), child: _RuleTile(rule: r, periodTab: _periodTab, categoryName: _catName(categories, r.categoryId)))),
-              const SizedBox(height: 16),
-
-              SectionTitle('Chiqimlar', trailing: Text('${expenseRules.length} ta', style: Theme.of(context).textTheme.labelSmall)),
-              if (expenseRules.isEmpty)
-                Padding(padding: const EdgeInsets.only(bottom: 16), child: Text("Hozircha yo'q", style: Theme.of(context).textTheme.labelSmall))
-              else
-                ...expenseRules.map((r) => FadeInItem(index: expenseRules.indexOf(r), child: _RuleTile(rule: r, periodTab: _periodTab, categoryName: _catName(categories, r.categoryId)))),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_right_rounded),
+                onPressed: () => setState(() => _anchor = _shiftAnchor(_anchor, _periodTab, 1)),
+              ),
             ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 4),
+            child: Text("Kutilayotgan natija (so'm)", style: Theme.of(context).textTheme.labelSmall),
+          ),
+          _SummaryCard(income: totalIncome, expense: totalExpense),
+          if (allRules.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            _PausedTotalRow(income: allIncome, expense: allExpense),
           ],
-        ),
-        floatingActionButton: FloatingActionButton.extended(onPressed: () => _openSheet(context), icon: const Icon(Icons.add), label: const Text("Qo'shish")),
-      );
+          const SizedBox(height: 8),
+          if (allRules.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: EmptyState(icon: Icons.event_repeat_rounded, title: "Hali takrorlanuvchi tranzaksiya yo'q", subtitle: "Pastdagi tugma orqali qo'shing"),
+            )
+          else ...[
+            SectionTitle('Kirimlar', trailing: Text('${incomeRules.length} ta', style: Theme.of(context).textTheme.labelSmall)),
+            if (incomeRules.isEmpty)
+              Padding(padding: const EdgeInsets.only(bottom: 8, left: 4), child: Text("Hozircha yo'q", style: Theme.of(context).textTheme.labelSmall))
+            else
+              ...List.generate(incomeRules.length, (i) => tile(incomeRules[i], i)),
+            const SizedBox(height: 8),
+            SectionTitle('Chiqimlar', trailing: Text('${expenseRules.length} ta', style: Theme.of(context).textTheme.labelSmall)),
+            if (expenseRules.isEmpty)
+              Padding(padding: const EdgeInsets.only(bottom: 8, left: 4), child: Text("Hozircha yo'q", style: Theme.of(context).textTheme.labelSmall))
+            else
+              ...List.generate(expenseRules.length, (i) => tile(expenseRules[i], i)),
+          ],
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openSheet(context),
+        icon: const Icon(Icons.add),
+        label: const Text("Qo'shish"),
+      ),
+    );
   }
 
   String _catName(List categories, String id) {
@@ -152,70 +299,179 @@ class _RecurringScreenState extends ConsumerState<RecurringScreen> {
       return '—';
     }
   }
+}
 
-  void _openSheet(BuildContext context, {RecurringTransactionModel? existing}) {
-    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => _AddRecurringSheet(existing: existing));
+/// Jami kirim / chiqim / sof natija — bitta ixcham qatorda (faqat faol qoidalar)
+class _SummaryCard extends StatelessWidget {
+  final double income;
+  final double expense;
+  const _SummaryCard({required this.income, required this.expense});
+
+  @override
+  Widget build(BuildContext context) {
+    final net = income - expense;
+    final netColor = net >= 0 ? AppTheme.brandIncome(context) : AppTheme.brandExpense(context);
+    final fmt = NumberFormat("#,##0");
+    final line = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1);
+
+    Widget stat(String label, String value, Color color, {bool padLeft = true}) => Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(left: padLeft ? 12 : 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: Theme.of(context).textTheme.labelSmall),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(value, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: color)),
+                ),
+              ],
+            ),
+          ),
+        );
+
+    return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            stat('Kirim', fmt.format(income), AppTheme.brandIncome(context), padLeft: false),
+            VerticalDivider(width: 1, thickness: 1, color: line),
+            stat('Chiqim', fmt.format(expense), AppTheme.brandExpense(context)),
+            VerticalDivider(width: 1, thickness: 1, color: line),
+            stat('Sof natija', _signed(net), netColor),
+          ],
+        ),
+      ),
+    );
   }
 }
 
+/// Kulrang qator: to'xtatilgan qoidalar bilan birga umumiy jami
+class _PausedTotalRow extends StatelessWidget {
+  final double income;
+  final double expense;
+  const _PausedTotalRow({required this.income, required this.expense});
+
+  @override
+  Widget build(BuildContext context) {
+    final grey = AppTheme.mutedText(context);
+    final fmt = NumberFormat("#,##0");
+    final small = Theme.of(context).textTheme.labelSmall?.copyWith(color: grey);
+    final bold = small?.copyWith(fontWeight: FontWeight.w700);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text.rich(
+        TextSpan(children: [
+          TextSpan(text: "Jami (to'xtatilgan bilan)  ", style: bold),
+          TextSpan(text: 'Kirim ', style: small),
+          TextSpan(text: fmt.format(income), style: bold),
+          TextSpan(text: '  •  Chiqim ', style: small),
+          TextSpan(text: fmt.format(expense), style: bold),
+          TextSpan(text: '  •  Sof ', style: small),
+          TextSpan(text: _signed(income - expense), style: bold),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Ixcham qoida kartasi: 3 qator matn + summa + menyu (tahrirlash / to'xtatish / o'chirish)
 class _RuleTile extends ConsumerWidget {
   final RecurringTransactionModel rule;
-  final String periodTab;
+  final _Range range;
   final String categoryName;
-  const _RuleTile({required this.rule, required this.periodTab, required this.categoryName});
+  final String periodPrefix; // "Bu oy" / "Shu hafta" ...
+  final int doneCount;
+  final double doneSum;
+  const _RuleTile({required this.rule, required this.range, required this.categoryName, required this.periodPrefix, this.doneCount = 0, this.doneSum = 0});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final r = rule;
-    final color = r.type == 'income' ? AppTheme.brandIncome(context) : AppTheme.brandExpense(context);
-    final projected = _projectedAmount(r, periodTab);
+    final isIncome = r.type == 'income';
+    final color = isIncome ? AppTheme.brandIncome(context) : AppTheme.brandExpense(context);
+    final muted = AppTheme.mutedText(context);
+    final small = Theme.of(context).textTheme.labelSmall;
+    final fmt = NumberFormat("#,##0");
+
+    final isOnce = r.frequency == 'once';
+    final amountText = isOnce ? fmt.format(r.amount) : fmt.format(_periodAmount(r, range));
+    final overdue = isOnce && r.isActive && r.nextOccurrence.isBefore(DateTime.now());
+    final dateText = !r.isActive
+        ? (isOnce ? 'Yakunlangan' : "To'xtatilgan")
+        : (overdue ? "Muddati o'tgan" : DateFormat('dd.MM.yyyy').format(r.nextOccurrence));
+    final verb = isIncome ? 'olingan' : "to'langan";
+    final verbNot = isIncome ? 'olinmagan' : "to'lanmagan";
+    final planned = _occurrencesIn(r, range);
+    final plannedHint = planned > 0 ? ' (reja: $planned marta)' : '';
+    final yearText = doneCount == 0
+        ? '$periodPrefix hali $verbNot$plannedHint'
+        : '$periodPrefix $verb: $doneCount${planned > 0 ? ' / $planned' : ''} marta • ${fmt.format(doneSum)} so\'m';
 
     return AppCard(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.fromLTRB(10, 6, 0, 6),
       tint: color,
       child: Opacity(
-        opacity: r.isActive ? 1 : 0.5,
-        child: Column(
+        opacity: r.isActive ? 1 : 0.55,
+        child: Row(
           children: [
-            Row(
-              children: [
-                CircleAvatar(backgroundColor: color.withValues(alpha: 0.14), child: Icon(r.type == 'income' ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded, color: color, size: 18)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(r.source ?? categoryName, style: Theme.of(context).textTheme.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text('$categoryName • ${_frequencyLabel(r.frequency)}', style: Theme.of(context).textTheme.labelSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    ],
-                  ),
-                ),
-                Switch(
-                  value: r.isActive,
-                  onChanged: (v) async {
-                    await ref.read(recurringProvider.notifier).toggleActive(r, v);
-                    await scheduleRecurringNotification(r);
-                  },
-                ),
-              ],
+            CircleAvatar(
+              radius: 15,
+              backgroundColor: color.withValues(alpha: 0.14),
+              child: Icon(isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded, color: color, size: 16),
             ),
-            const Divider(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('≈ ${NumberFormat("#,##0").format(projected)} so\'m', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: color)),
-                Row(
-                  children: [
-                    Icon(Icons.event_repeat_rounded, size: 13, color: AppTheme.mutedText(context)),
-                    const SizedBox(width: 4),
-                    Text(r.isActive ? DateFormat('dd.MM.yyyy').format(r.nextOccurrence) : "To'xtatilgan", style: Theme.of(context).textTheme.labelSmall),
-                    const SizedBox(width: 12),
-                    IconButton(icon: Icon(Icons.edit_outlined, size: 17, color: AppTheme.brandPrimary(context)), padding: EdgeInsets.zero, constraints: const BoxConstraints(), onPressed: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => _AddRecurringSheet(existing: r))),
-                    const SizedBox(width: 12),
-                    IconButton(icon: Icon(Icons.delete_outline, size: 17, color: AppTheme.brandExpense(context)), padding: EdgeInsets.zero, constraints: const BoxConstraints(), onPressed: () => _confirmDelete(context, ref, r)),
-                  ],
-                ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(r.source ?? categoryName, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(
+                    '$categoryName • ${_frequencyLabel(r.frequency)} • $dateText',
+                    style: small?.copyWith(color: overdue ? AppTheme.brandExpense(context) : null),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(yearText, style: small?.copyWith(color: muted), maxLines: 1, overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 118),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text("$amountText so'm", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: color)),
+              ),
+            ),
+            PopupMenuButton<String>(
+              padding: EdgeInsets.zero,
+              icon: Icon(Icons.more_vert_rounded, size: 20, color: muted),
+              onSelected: (v) async {
+                if (v == 'edit') {
+                  _openSheet(context, existing: r);
+                } else if (v == 'toggle') {
+                  await ref.read(recurringProvider.notifier).toggleActive(r, !r.isActive);
+                  await scheduleRecurringNotification(r);
+                } else if (v == 'delete') {
+                  _confirmDelete(context, ref, r);
+                }
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'edit', child: Text('Tahrirlash')),
+                PopupMenuItem(value: 'toggle', child: Text(r.isActive ? "To'xtatish" : 'Davom ettirish')),
+                const PopupMenuItem(value: 'delete', child: Text("O'chirish")),
               ],
             ),
           ],
@@ -227,16 +483,16 @@ class _RuleTile extends ConsumerWidget {
   void _confirmDelete(BuildContext context, WidgetRef ref, RecurringTransactionModel r) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text("O'chirish"),
-        content: const Text('Bu takrorlanuvchi qoidani o\'chirmoqchimisiz? (Avval yaratilgan tranzaksiyalar saqlanib qoladi)'),
+        content: const Text("Bu qoidani o'chirmoqchimisiz? (Avval yaratilgan tranzaksiyalar saqlanib qoladi)"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Bekor qilish')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Bekor qilish')),
           TextButton(
             onPressed: () {
               NotificationService.cancelById(r.id.hashCode);
               ref.read(recurringProvider.notifier).remove(r.id);
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
             },
             child: Text("O'chirish", style: TextStyle(color: AppTheme.brandExpense(context))),
           ),
@@ -268,12 +524,14 @@ class _AddRecurringSheetState extends ConsumerState<_AddRecurringSheet> {
     super.initState();
     final e = widget.existing;
     _type = e?.type ?? 'expense';
-    _frequency = e?.frequency ?? 'monthly';
+    _frequency = e?.frequency ?? 'once'; // yangi qo'shishda standart: Bir marta
     _categoryId = e?.categoryId;
     _amountController = TextEditingController(text: e != null ? NumberFormat("#,##0").format(e.amount) : '');
     _sourceController = TextEditingController(text: e?.source ?? '');
-    _startDate = e?.startDate ?? DateTime.now();
-    _startTime = TimeOfDay.fromDateTime(e?.nextOccurrence ?? e?.startDate ?? DateTime.now());
+    // Yangi qoida uchun standart vaqt: keyingi soatning boshi (har doim kelajakda)
+    final defaultWhen = DateTime.now().add(const Duration(hours: 1));
+    _startDate = e?.nextOccurrence ?? e?.startDate ?? defaultWhen;
+    _startTime = e != null ? TimeOfDay.fromDateTime(e.nextOccurrence) : TimeOfDay(hour: defaultWhen.hour, minute: 0);
   }
 
   @override
@@ -281,6 +539,38 @@ class _AddRecurringSheetState extends ConsumerState<_AddRecurringSheet> {
     _amountController.dispose();
     _sourceController.dispose();
     super.dispose();
+  }
+
+  Widget _freqChip(String value, String label, Color onSurface) {
+    final selected = _frequency == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      selectedColor: AppTheme.brandPrimary(context),
+      labelStyle: TextStyle(color: selected ? Colors.white : onSurface, fontSize: 13),
+      onSelected: (_) => setState(() => _frequency = value),
+    );
+  }
+
+  Widget _typeChip(String value, String label, Color color, Color onSurface) {
+    final selected = _type == value;
+    return Expanded(
+      child: ChoiceChip(
+        label: Center(child: Text(label)),
+        selected: selected,
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        selectedColor: color,
+        labelStyle: TextStyle(color: selected ? Colors.white : onSurface, fontWeight: FontWeight.w600),
+        onSelected: (_) => setState(() {
+          _type = value;
+          _categoryId = null;
+        }),
+      ),
+    );
   }
 
   @override
@@ -296,79 +586,99 @@ class _AddRecurringSheetState extends ConsumerState<_AddRecurringSheet> {
         child: Container(
           constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.88),
           decoration: BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(isEditing ? "Qoidani tahrirlash" : "Yangi takrorlanuvchi qoida", style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: onSurface)),
-                const SizedBox(height: 16),
+                Text(isEditing ? 'Tahrirlash' : "Yangi takrorlanuvchi qo'shish", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: onSurface)),
+                const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(child: ChoiceChip(label: const Text('Chiqim'), selected: _type == 'expense', showCheckmark: false, selectedColor: AppTheme.brandExpense(context), labelStyle: TextStyle(color: _type == 'expense' ? Colors.white : onSurface, fontWeight: FontWeight.w600), onSelected: (_) => setState(() { _type = 'expense'; _categoryId = null; }))),
+                    _typeChip('expense', 'Chiqim', AppTheme.brandExpense(context), onSurface),
                     const SizedBox(width: 8),
-                    Expanded(child: ChoiceChip(label: const Text('Kirim'), selected: _type == 'income', showCheckmark: false, selectedColor: AppTheme.brandIncome(context), labelStyle: TextStyle(color: _type == 'income' ? Colors.white : onSurface, fontWeight: FontWeight.w600), onSelected: (_) => setState(() { _type = 'income'; _categoryId = null; }))),
+                    _typeChip('income', 'Kirim', AppTheme.brandIncome(context), onSurface),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 TextField(
-                  controller: _amountController, keyboardType: TextInputType.number, inputFormatters: [ThousandsFormatter()],
-                  style: TextStyle(color: onSurface, fontSize: 18, fontWeight: FontWeight.w700),
-                  decoration: const InputDecoration(labelText: 'Summa', suffixText: "so'm"),
+                  controller: _amountController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [ThousandsFormatter()],
+                  style: TextStyle(color: onSurface, fontSize: 17, fontWeight: FontWeight.w700),
+                  decoration: const InputDecoration(labelText: 'Summa', suffixText: "so'm", isDense: true),
                 ),
-                const SizedBox(height: 16),
-                Text("Bo'lim", style: TextStyle(fontWeight: FontWeight.w700, color: onSurface, fontSize: 15)),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                Text("Bo'lim", style: TextStyle(fontWeight: FontWeight.w700, color: onSurface, fontSize: 14)),
+                const SizedBox(height: 6),
                 Wrap(
-                  spacing: 8, runSpacing: 8,
+                  spacing: 6,
+                  runSpacing: 4,
                   children: categories.map((c) {
-                    final catColor = Color(c.colorValue);
                     final selected = c.id == _categoryId;
                     return ChoiceChip(
-                      label: Text(c.name), selected: selected, showCheckmark: false,
+                      label: Text(c.name),
+                      selected: selected,
+                      showCheckmark: false,
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      selectedColor: catColor,
-                      labelStyle: TextStyle(color: selected ? Colors.white : onSurface, fontWeight: FontWeight.w600),
+                      selectedColor: Color(c.colorValue),
+                      labelStyle: TextStyle(color: selected ? Colors.white : onSurface, fontWeight: FontWeight.w600, fontSize: 13),
                       onSelected: (_) => setState(() => _categoryId = c.id),
                     );
                   }).toList(),
                 ),
-                const SizedBox(height: 16),
-                Text("Qaysi vaqt davomida takrorlanadi", style: TextStyle(fontWeight: FontWeight.w700, color: onSurface, fontSize: 15)),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                Text('Qaysi vaqt davomida takrorlanadi', style: TextStyle(fontWeight: FontWeight.w700, color: onSurface, fontSize: 14)),
+                const SizedBox(height: 6),
                 Wrap(
-                  spacing: 8,
+                  spacing: 6,
+                  runSpacing: 4,
                   children: [
-                    ChoiceChip(label: const Text('Har kuni'), selected: _frequency == 'daily', showCheckmark: false, selectedColor: AppTheme.brandPrimary(context), labelStyle: TextStyle(color: _frequency == 'daily' ? Colors.white : onSurface), onSelected: (_) => setState(() => _frequency = 'daily')),
-                    ChoiceChip(label: const Text('Har hafta'), selected: _frequency == 'weekly', showCheckmark: false, selectedColor: AppTheme.brandPrimary(context), labelStyle: TextStyle(color: _frequency == 'weekly' ? Colors.white : onSurface), onSelected: (_) => setState(() => _frequency = 'weekly')),
-                    ChoiceChip(label: const Text('Har oy'), selected: _frequency == 'monthly', showCheckmark: false, selectedColor: AppTheme.brandPrimary(context), labelStyle: TextStyle(color: _frequency == 'monthly' ? Colors.white : onSurface), onSelected: (_) => setState(() => _frequency = 'monthly')),
+                    _freqChip('once', 'Bir marta', onSurface),
+                    _freqChip('daily', 'Har kuni', onSurface),
+                    _freqChip('weekly', 'Har hafta', onSurface),
+                    _freqChip('monthly', 'Har oy', onSurface),
                   ],
                 ),
-                const SizedBox(height: 16),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('Boshlanish sanasi', style: TextStyle(color: onSurface)),
-                  subtitle: Text(DateFormat('dd.MM.yyyy').format(_startDate)),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    final picked = await showDatePicker(context: context, initialDate: _startDate, firstDate: DateTime(2020), lastDate: DateTime(2100));
-                    if (picked != null) setState(() => _startDate = picked);
-                  },
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _PickTile(
+                        icon: Icons.calendar_today_rounded,
+                        label: _frequency == 'once' ? 'Sana' : 'Boshlanish sanasi',
+                        value: DateFormat('dd.MM.yyyy').format(_startDate),
+                        onTap: () async {
+                          final picked = await showDatePicker(context: context, initialDate: _startDate, firstDate: DateTime(2020), lastDate: DateTime(2100));
+                          if (picked != null) setState(() => _startDate = picked);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _PickTile(
+                        icon: Icons.access_time_rounded,
+                        label: 'Bildirishnoma vaqti',
+                        value: _startTime.format(context),
+                        onTap: () async {
+                          final picked = await showTimePicker(context: context, initialTime: _startTime);
+                          if (picked != null) setState(() => _startTime = picked);
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('Vaqt (bildirishnoma shu vaqtda keladi)', style: TextStyle(color: onSurface)),
-                  subtitle: Text(_startTime.format(context)),
-                  trailing: const Icon(Icons.access_time),
-                  onTap: () async {
-                    final picked = await showTimePicker(context: context, initialTime: _startTime);
-                    if (picked != null) setState(() => _startTime = picked);
-                  },
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _sourceController,
+                  style: TextStyle(color: onSurface),
+                  decoration: const InputDecoration(labelText: 'Nomi (masalan: Ish haqi, Kommunal)', isDense: true),
                 ),
-                TextField(controller: _sourceController, style: TextStyle(color: onSurface), decoration: const InputDecoration(labelText: 'Nomi (masalan: Ish haqi, Kommunal)')),
-                const SizedBox(height: 20),
-                SizedBox(width: double.infinity, height: 50, child: ElevatedButton(onPressed: _save, child: Text(isEditing ? 'Saqlash' : "Qo'shish"))),
+                const SizedBox(height: 14),
+                SizedBox(width: double.infinity, height: 46, child: ElevatedButton(onPressed: _save, child: Text(isEditing ? 'Saqlash' : "Qo'shish"))),
               ],
             ),
           ),
@@ -389,7 +699,13 @@ class _AddRecurringSheetState extends ConsumerState<_AddRecurringSheet> {
     }
 
     final combinedDateTime = DateTime(_startDate.year, _startDate.month, _startDate.day, _startTime.hour, _startTime.minute);
+    if (_frequency == 'once' && !combinedDateTime.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bir martalik to'lov uchun kelajakdagi sana va vaqtni tanlang")));
+      return;
+    }
     await NotificationService.requestPermission();
+
+    final sourceText = _sourceController.text.trim().isEmpty ? null : _sourceController.text.trim();
 
     if (widget.existing != null) {
       final updated = widget.existing!;
@@ -399,18 +715,84 @@ class _AddRecurringSheetState extends ConsumerState<_AddRecurringSheet> {
       updated.frequency = _frequency;
       updated.startDate = combinedDateTime;
       updated.nextOccurrence = combinedDateTime;
-      updated.source = _sourceController.text.trim().isEmpty ? null : _sourceController.text.trim();
+      updated.source = sourceText;
       await ref.read(recurringProvider.notifier).update(updated);
       await scheduleRecurringNotification(updated);
     } else {
       final model = RecurringTransactionModel(
-        id: const Uuid().v4(), amount: amount, categoryId: _categoryId!, type: _type, frequency: _frequency,
-        startDate: combinedDateTime, nextOccurrence: combinedDateTime,
-        source: _sourceController.text.trim().isEmpty ? null : _sourceController.text.trim(),
+        id: const Uuid().v4(),
+        amount: amount,
+        categoryId: _categoryId!,
+        type: _type,
+        frequency: _frequency,
+        startDate: combinedDateTime,
+        nextOccurrence: combinedDateTime,
+        source: sourceText,
       );
       await ref.read(recurringProvider.notifier).add(model);
       await scheduleRecurringNotification(model);
     }
+
+    // Chiqim uchun mablag' yetmasa — saqlangandan keyin ham aniq ko'rinadigan ogohlantirish
+    final balance = _type == 'expense' ? calculateCurrentBalance(ref) : 0.0;
+    final lacking = _type == 'expense' && balance < amount;
+
     if (mounted) Navigator.pop(context);
+
+    if (lacking) {
+      final fmt = NumberFormat('#,##0');
+      rootMessengerKey.currentState
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 8),
+          backgroundColor: Colors.red.shade700,
+          content: Text(
+            "Mablag' yetarli emas: balansda ${fmt.format(balance)} so'm bor, chiqim ${fmt.format(amount)} so'm. "
+            "Tasdiqlash vaqtida ham yetmasa, tranzaksiya yaratilmaydi.",
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+        ));
+    }
+  }
+}
+
+/// Sana / vaqt tanlash uchun ixcham katak
+class _PickTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+  const _PickTile({required this.icon, required this.label, required this.value, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: onSurface.withValues(alpha: 0.15)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: AppTheme.brandPrimary(context)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: Theme.of(context).textTheme.labelSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(value, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: onSurface)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

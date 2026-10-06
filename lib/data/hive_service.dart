@@ -35,6 +35,29 @@ class HiveService {
     await Hive.openBox<PlanModel>(planBox); 
 
     await _seedDefaultCategories();
+    await _removeUnusedDefaultsV1();
+  }
+
+  /// Bir martalik tozalash: avval yaratilgan "Yo'l kira" va "Ko'ngilochar" standart bo'limlarini
+  /// faqat hech qayerda ishlatilmagan bo'lsa o'chiradi (tranzaksiya/byudjet/qoida bor bo'lsa tegmaydi).
+  static Future<void> _removeUnusedDefaultsV1() async {
+    final settings = Hive.box(settingsBox);
+    if (settings.get('removedDefaultsV1', defaultValue: false) == true) return;
+
+    final cats = Hive.box<CategoryModel>(categoryBox);
+    final txs = Hive.box<TransactionModel>(transactionBox);
+    final budgets = Hive.box<BudgetModel>(budgetBox);
+    final rules = Hive.box<RecurringTransactionModel>(recurringBox);
+
+    for (final id in ['transport', 'entertainment']) {
+      final c = cats.get(id);
+      if (c == null || !c.isDefault) continue;
+      final used = txs.values.any((t) => t.categoryId == id) ||
+          budgets.values.any((b) => b.categoryId == id) ||
+          rules.values.any((r) => r.categoryId == id);
+      if (!used) await cats.delete(id);
+    }
+    await settings.put('removedDefaultsV1', true);
   }
 
   // Dastur birinchi marta ochilganda standart bo'limlarni qo'shamiz
@@ -52,14 +75,6 @@ class HiveService {
         isDefault: true,
       ),
       CategoryModel(
-        id: 'transport',
-        name: "Yo'l kira",
-        iconCode: 'directions_bus',
-        colorValue: 0xFF42A5F5,
-        type: 'expense',
-        isDefault: true,
-      ),
-      CategoryModel(
         id: 'health',
         name: 'Dori-darmon',
         iconCode: 'local_hospital',
@@ -72,14 +87,6 @@ class HiveService {
         name: 'Kommunal',
         iconCode: 'bolt',
         colorValue: 0xFFFFCA28,
-        type: 'expense',
-        isDefault: true,
-      ),
-      CategoryModel(
-        id: 'entertainment',
-        name: "Ko'ngilochar",
-        iconCode: 'movie',
-        colorValue: 0xFFAB47BC,
         type: 'expense',
         isDefault: true,
       ),
