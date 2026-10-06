@@ -9,6 +9,7 @@ import 'providers/settings_provider.dart';
 import 'dart:async';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'core/utils/recurring_scheduler.dart';
+import 'core/utils/launch_gate.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,9 +41,15 @@ class _MyAppState extends ConsumerState<MyApp> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final launch = await NotificationService.getLaunchResponse();
-      if (launch?.payload != null && launch?.actionId != null) {
-        await handleRecurringAction(ref, launch!.payload!, launch.actionId!);
+      try {
+        final launch = await NotificationService.getLaunchResponse();
+        if (launch?.payload != null && launch?.actionId != null) {
+          await handleRecurringAction(ref, launch!.payload!, launch.actionId!);
+        }
+          } finally {
+        if (!launchHandled.isCompleted) {
+          launchHandled.complete();
+        }
       }
     });
   }

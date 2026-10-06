@@ -171,7 +171,7 @@ class _Header extends StatelessWidget {
             const SizedBox(width: 8),
             _HeaderIcon(icon: Icons.handshake_outlined, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DebtScreen()))),
             const SizedBox(width: 8),
-            _HeaderIcon(icon: Icons.autorenew_rounded, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RecurringScreen()))),
+            _HeaderIcon(icon: Icons.event_repeat_rounded, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RecurringScreen()))),
           ],
         ),
       ],

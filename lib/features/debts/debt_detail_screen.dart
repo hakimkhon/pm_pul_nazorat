@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 import '../../providers/debt_provider.dart';
+import '../../providers/transaction_provider.dart';
+import '../../models/transaction_model.dart';
+import '../../core/utils/balance_guard.dart';
+import '../../core/utils/debt_category_helper.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/thousands_formatter.dart';
 import '../../widgets/shared_widgets.dart';
@@ -140,42 +145,92 @@ class DebtDetailScreen extends ConsumerWidget {
     final debt = ref.read(debtProvider).firstWhere((d) => d.id == debtId);
     final controller = TextEditingController();
     final noteController = TextEditingController();
+    String? errorText;
+    var saving = false;
 
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text("To'lov qo'shish"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              inputFormatters: [ThousandsFormatter()],
-              autofocus: true,
-              style: TextStyle(color: Theme.of(dialogContext).colorScheme.onSurface, fontSize: 18, fontWeight: FontWeight.w700),
-              decoration: InputDecoration(labelText: 'Summa', suffixText: "so'm", helperText: 'Qoldiq: ${NumberFormat("#,##0").format(debt.remainingAmount)} so\'m'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: noteController,
-              style: TextStyle(color: Theme.of(dialogContext).colorScheme.onSurface),
-              decoration: const InputDecoration(labelText: 'Izoh (ixtiyoriy)'),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text("To'lov qo'shish"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                inputFormatters: [ThousandsFormatter()],
+                autofocus: true,
+                style: TextStyle(color: Theme.of(dialogContext).colorScheme.onSurface, fontSize: 18, fontWeight: FontWeight.w700),
+                decoration: InputDecoration(
+                  labelText: 'Summa',
+                  suffixText: "so'm",
+                  helperText: 'Qoldiq: ${NumberFormat("#,##0").format(debt.remainingAmount)} so\'m',
+                  errorText: errorText,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: noteController,
+                style: TextStyle(color: Theme.of(dialogContext).colorScheme.onSurface),
+                decoration: const InputDecoration(labelText: 'Izoh (ixtiyoriy)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Bekor qilish')),
+            TextButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final amount = ThousandsFormatter.parse(controller.text);
+                      if (amount == null || amount <= 0) {
+                        setState(() => errorText = "To'g'ri summa kiriting");
+                        return;
+                      }
+                      if (amount > debt.remainingAmount) {
+                        setState(() => errorText = "Summa qoldiqdan ko'p bo'lmasin");
+                        return;
+                      }
+
+                      // Men berganimda: qaytarilgan to'lov — KIRIM (pul keldi).
+                      // Men olganimda: to'lov — CHIQIM (pul chiqdi) => balans yetarli bo'lishi shart.
+                      final isExpense = debt.type == 'borrowed';
+                      if (isExpense) {
+                        final balance = calculateCurrentBalance(ref);
+                        if (amount > balance) {
+                          setState(() => errorText = "Balans yetarli emas: ${NumberFormat("#,##0").format(balance)} so'm");
+                          return;
+                        }
+                      }
+
+                      setState(() => saving = true);
+                      final userNote = noteController.text.trim();
+
+                      final (expenseCatId, incomeCatId) = await ensureDebtCategories(ref);
+                      final txId = const Uuid().v4();
+                      await ref.read(transactionProvider.notifier).addTransaction(TransactionModel(
+                            id: txId,
+                            amount: amount,
+                            categoryId: isExpense ? expenseCatId : incomeCatId,
+                            type: isExpense ? 'expense' : 'income',
+                            date: DateTime.now(),
+                            source: debt.personName,
+                            note: userNote.isNotEmpty ? userNote : (isExpense ? "Qarz to'landi" : 'Qarz qaytarildi'),
+                          ));
+
+                      await ref.read(debtProvider.notifier).addPayment(
+                            debt,
+                            amount,
+                            note: userNote.isEmpty ? null : userNote,
+                            transactionId: txId,
+                          );
+                      if (dialogContext.mounted) Navigator.pop(dialogContext);
+                    },
+              child: const Text('Saqlash'),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Bekor qilish')),
-          TextButton(
-            onPressed: () {
-              final amount = ThousandsFormatter.parse(controller.text);
-              if (amount == null || amount <= 0) return;
-              ref.read(debtProvider.notifier).addPayment(debt, amount, note: noteController.text.trim().isEmpty ? null : noteController.text.trim());
-              Navigator.pop(dialogContext);
-            },
-            child: const Text('Saqlash'),
-          ),
-        ],
       ),
     );
   }

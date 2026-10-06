@@ -11,126 +11,220 @@ import '../../data/notification_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/shared_widgets.dart';
 
-class RecurringScreen extends ConsumerWidget {
+/// Har xil chastotadagi qoidalarni solishtirish uchun — yiliga nechta marta takrorlanadi
+double _occurrencesPerYear(String frequency) {
+  switch (frequency) {
+    case 'daily':
+      return 365;
+    case 'weekly':
+      return 52;
+    case 'monthly':
+    default:
+      return 12;
+  }
+}
+
+/// Qoidaning tanlangan davr (hafta/oy/yil) uchun ekvivalent summasi
+double _projectedAmount(RecurringTransactionModel r, String periodTab) {
+  final perYear = r.amount * _occurrencesPerYear(r.frequency);
+  switch (periodTab) {
+    case 'weekly':
+      return perYear / 52;
+    case 'monthly':
+      return perYear / 12;
+    case 'yearly':
+    default:
+      return perYear;
+  }
+}
+
+String _frequencyLabel(String f) {
+  switch (f) {
+    case 'daily':
+      return 'Har kuni';
+    case 'weekly':
+      return 'Har hafta';
+    default:
+      return 'Har oy';
+  }
+}
+
+class RecurringScreen extends ConsumerStatefulWidget {
   const RecurringScreen({super.key});
 
-  String _frequencyLabel(String f) {
-    switch (f) {
-      case 'daily': return 'Har kuni';
-      case 'weekly': return 'Har hafta';
-      default: return 'Har oy';
-    }
-  }
+  @override
+  ConsumerState<RecurringScreen> createState() => _RecurringScreenState();
+}
 
-  DateTime _nextOccurrence(RecurringTransactionModel r) => r.nextOccurrence;
+class _RecurringScreenState extends ConsumerState<RecurringScreen> {
+  String _periodTab = 'monthly'; // 'weekly' | 'monthly' | 'yearly'
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final recurrences = ref.watch(recurringProvider);
-    final categories = ref.watch(categoryProvider);
+  Widget build(BuildContext context) {
+      final allRules = ref.watch(recurringProvider);
+      final categories = ref.watch(categoryProvider);
+      final activeRules = allRules.where((r) => r.isActive).toList();
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Takrorlanuvchi tranzaksiyalar')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: AppTheme.brandGold(context).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(AppTheme.radiusMedium)),
+      final incomeRules = allRules.where((r) => r.type == 'income').toList()
+        ..sort((a, b) => a.isActive == b.isActive ? a.nextOccurrence.compareTo(b.nextOccurrence) : (a.isActive ? -1 : 1));
+      final expenseRules = allRules.where((r) => r.type == 'expense').toList()
+        ..sort((a, b) => a.isActive == b.isActive ? a.nextOccurrence.compareTo(b.nextOccurrence) : (a.isActive ? -1 : 1));
+
+      final totalIncome = activeRules.where((r) => r.type == 'income').fold(0.0, (s, r) => s + _projectedAmount(r, _periodTab));
+      final totalExpense = activeRules.where((r) => r.type == 'expense').fold(0.0, (s, r) => s + _projectedAmount(r, _periodTab));
+
+      final periodNoun = {'weekly': 'haftalik', 'monthly': 'oylik', 'yearly': 'yillik'}[_periodTab]!;
+
+      return Scaffold(
+        appBar: AppBar(title: const Text('Takrorlanuvchi tranzaksiyalar')),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            EqualSegmentedBar<String>(
+              options: const {'Haftalik': 'weekly', 'Oylik': 'monthly', 'Yillik': 'yearly'},
+              selected: _periodTab,
+              onSelect: (v) => setState(() => _periodTab = v),
+            ),
+            const SizedBox(height: 14),
+            Text('Kutilayotgan $periodNoun natija', style: Theme.of(context).textTheme.labelSmall),
+            const SizedBox(height: 6),
+            AppCard(
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline, color: AppTheme.brandGold(context), size: 20),
-                  const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      "Bu yerda har oy/hafta/kun takrorlanadigan kirim yoki chiqimlarni (ish haqi, ijara, kommunal) belgilab qo'ysangiz, dastur ularni siz uchun avtomatik yaratib boradi — har safar qo'lda kiritish shart emas.",
-                      style: Theme.of(context).textTheme.labelSmall,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Jami kirim', style: Theme.of(context).textTheme.labelSmall),
+                        const SizedBox(height: 4),
+                        Text('${NumberFormat("#,##0").format(totalIncome)} so\'m', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: AppTheme.brandIncome(context))),
+                      ],
+                    ),
+                  ),
+                  Container(width: 1, height: 36, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1)),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Jami chiqim', style: Theme.of(context).textTheme.labelSmall),
+                          const SizedBox(height: 4),
+                          Text('${NumberFormat("#,##0").format(totalExpense)} so\'m', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: AppTheme.brandExpense(context))),
+                        ],
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-          Expanded(
-            child: recurrences.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: EmptyState(icon: Icons.autorenew_rounded, title: "Hali takrorlanuvchi tranzaksiya yo'q", subtitle: 'Pastdagi + tugmasi orqali qo\'shing'),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: recurrences.length,
-                    itemBuilder: (context, index) {
-                      final r = recurrences[index];
-                      final cat = categories.firstWhere((c) => c.id == r.categoryId, orElse: () => categories.first);
-                      final color = Color(cat.colorValue);
-                      final next = _nextOccurrence(r);
+            const SizedBox(height: 20),
 
-                      return FadeInItem(
-                        index: index,
-                        child: AppCard(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(12),
-                          tint: color,
-                          child: Column(
-                            children: [
-                              Row(
-                                children: [
-                                  CategoryAvatar(category: cat),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(r.source ?? cat.name, style: Theme.of(context).textTheme.titleMedium),
-                                        Text('${_frequencyLabel(r.frequency)} • ${NumberFormat("#,##0").format(r.amount)} so\'m', style: Theme.of(context).textTheme.labelSmall),
-                                      ],
-                                    ),
-                                  ),
-                                  Switch(value: r.isActive, onChanged: (v) async {
-                                    await ref.read(recurringProvider.notifier).toggleActive(r, v);
-                                    await scheduleRecurringNotification(r);
-                                  }),
-                                ],
-                              ),
-                              const Divider(height: 16),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(Icons.event_repeat_rounded, size: 14, color: AppTheme.mutedText(context)),
-                                      const SizedBox(width: 4),
-                                      Text(r.isActive ? 'Keyingisi: ${DateFormat('dd.MM.yyyy HH:mm').format(next)}' : 'To\'xtatilgan', style: Theme.of(context).textTheme.labelSmall),
-                                    ],
-                                  ),
-                                  Row(
-                                    children: [
-                                      IconButton(icon: Icon(Icons.edit_outlined, size: 18, color: AppTheme.brandPrimary(context)), onPressed: () => _openSheet(context, existing: r), padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-                                      const SizedBox(width: 16),
-                                      IconButton(icon: Icon(Icons.delete_outline, size: 18, color: AppTheme.brandExpense(context)), onPressed: () => _confirmDelete(context, ref, r.id), padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+            if (allRules.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: EmptyState(icon: Icons.event_repeat_rounded, title: "Hali takrorlanuvchi tranzaksiya yo'q", subtitle: 'Pastdagi + tugmasi orqali qo\'shing'),
+              )
+            else ...[
+              SectionTitle('Kirimlar', trailing: Text('${incomeRules.length} ta', style: Theme.of(context).textTheme.labelSmall)),
+              if (incomeRules.isEmpty)
+                Padding(padding: const EdgeInsets.only(bottom: 16), child: Text("Hozircha yo'q", style: Theme.of(context).textTheme.labelSmall))
+              else
+                ...incomeRules.map((r) => FadeInItem(index: incomeRules.indexOf(r), child: _RuleTile(rule: r, periodTab: _periodTab, categoryName: _catName(categories, r.categoryId)))),
+              const SizedBox(height: 16),
+
+              SectionTitle('Chiqimlar', trailing: Text('${expenseRules.length} ta', style: Theme.of(context).textTheme.labelSmall)),
+              if (expenseRules.isEmpty)
+                Padding(padding: const EdgeInsets.only(bottom: 16), child: Text("Hozircha yo'q", style: Theme.of(context).textTheme.labelSmall))
+              else
+                ...expenseRules.map((r) => FadeInItem(index: expenseRules.indexOf(r), child: _RuleTile(rule: r, periodTab: _periodTab, categoryName: _catName(categories, r.categoryId)))),
+            ],
+          ],
+        ),
+        floatingActionButton: FloatingActionButton.extended(onPressed: () => _openSheet(context), icon: const Icon(Icons.add), label: const Text("Qo'shish")),
+      );
+  }
+
+  String _catName(List categories, String id) {
+    try {
+      return categories.firstWhere((c) => c.id == id).name;
+    } catch (_) {
+      return '—';
+    }
+  }
+
+  void _openSheet(BuildContext context, {RecurringTransactionModel? existing}) {
+    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => _AddRecurringSheet(existing: existing));
+  }
+}
+
+class _RuleTile extends ConsumerWidget {
+  final RecurringTransactionModel rule;
+  final String periodTab;
+  final String categoryName;
+  const _RuleTile({required this.rule, required this.periodTab, required this.categoryName});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final r = rule;
+    final color = r.type == 'income' ? AppTheme.brandIncome(context) : AppTheme.brandExpense(context);
+    final projected = _projectedAmount(r, periodTab);
+
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      tint: color,
+      child: Opacity(
+        opacity: r.isActive ? 1 : 0.5,
+        child: Column(
+          children: [
+            Row(
+              children: [
+                CircleAvatar(backgroundColor: color.withValues(alpha: 0.14), child: Icon(r.type == 'income' ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded, color: color, size: 18)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(r.source ?? categoryName, style: Theme.of(context).textTheme.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('$categoryName • ${_frequencyLabel(r.frequency)}', style: Theme.of(context).textTheme.labelSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
                   ),
-          ),
-        ],
+                ),
+                Switch(
+                  value: r.isActive,
+                  onChanged: (v) async {
+                    await ref.read(recurringProvider.notifier).toggleActive(r, v);
+                    await scheduleRecurringNotification(r);
+                  },
+                ),
+              ],
+            ),
+            const Divider(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('≈ ${NumberFormat("#,##0").format(projected)} so\'m', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: color)),
+                Row(
+                  children: [
+                    Icon(Icons.event_repeat_rounded, size: 13, color: AppTheme.mutedText(context)),
+                    const SizedBox(width: 4),
+                    Text(r.isActive ? DateFormat('dd.MM.yyyy').format(r.nextOccurrence) : "To'xtatilgan", style: Theme.of(context).textTheme.labelSmall),
+                    const SizedBox(width: 12),
+                    IconButton(icon: Icon(Icons.edit_outlined, size: 17, color: AppTheme.brandPrimary(context)), padding: EdgeInsets.zero, constraints: const BoxConstraints(), onPressed: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => _AddRecurringSheet(existing: r))),
+                    const SizedBox(width: 12),
+                    IconButton(icon: Icon(Icons.delete_outline, size: 17, color: AppTheme.brandExpense(context)), padding: EdgeInsets.zero, constraints: const BoxConstraints(), onPressed: () => _confirmDelete(context, ref, r)),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
-      floatingActionButton: FloatingActionButton.extended(onPressed: () => _openSheet(context), icon: const Icon(Icons.add), label: const Text("Qo'shish")),
     );
   }
 
-  void _confirmDelete(BuildContext context, WidgetRef ref, String id) {
+  void _confirmDelete(BuildContext context, WidgetRef ref, RecurringTransactionModel r) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -138,14 +232,17 @@ class RecurringScreen extends ConsumerWidget {
         content: const Text('Bu takrorlanuvchi qoidani o\'chirmoqchimisiz? (Avval yaratilgan tranzaksiyalar saqlanib qoladi)'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Bekor qilish')),
-          TextButton(onPressed: () { NotificationService.cancelById(id.hashCode); ref.read(recurringProvider.notifier).remove(id); Navigator.pop(context); }, child: Text("O'chirish", style: TextStyle(color: AppTheme.brandExpense(context)))),
+          TextButton(
+            onPressed: () {
+              NotificationService.cancelById(r.id.hashCode);
+              ref.read(recurringProvider.notifier).remove(r.id);
+              Navigator.pop(context);
+            },
+            child: Text("O'chirish", style: TextStyle(color: AppTheme.brandExpense(context))),
+          ),
         ],
       ),
     );
-  }
-
-  void _openSheet(BuildContext context, {RecurringTransactionModel? existing}) {
-    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => _AddRecurringSheet(existing: existing));
   }
 }
 
@@ -238,7 +335,7 @@ class _AddRecurringSheetState extends ConsumerState<_AddRecurringSheet> {
                   }).toList(),
                 ),
                 const SizedBox(height: 16),
-                Text("Takrorlanish", style: TextStyle(fontWeight: FontWeight.w700, color: onSurface, fontSize: 15)),
+                Text("Qaysi vaqt davomida takrorlanadi", style: TextStyle(fontWeight: FontWeight.w700, color: onSurface, fontSize: 15)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,

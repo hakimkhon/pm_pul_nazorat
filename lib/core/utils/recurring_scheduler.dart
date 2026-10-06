@@ -72,7 +72,9 @@ Future<void> scheduleRecurringNotification(RecurringTransactionModel r) async {
     title: 'Takrorlanuvchi tranzaksiya',
     body: '"${r.source ?? 'Tranzaksiya'}" — ${r.amount.toStringAsFixed(0)} so\'m. Tasdiqlaysizmi?',
     scheduledDate: target,
-    payload: r.id,
+    // payload: "<id>|<qaysi sana uchun, ms>" — eski bildirishnoma keyin bosilsa ham
+    // tranzaksiya to'g'ri sanaga yoziladi va qoida ikki marta surilib ketmaydi
+    payload: '${r.id}|${r.nextOccurrence.millisecondsSinceEpoch}',
   );
 }
 
@@ -83,8 +85,26 @@ Future<void> rescheduleAllRecurring(WidgetRef ref) async {
 }
 
 /// Bildirishnoma tugmasi: 'done' | 'snooze' | 'cancel_action'
-Future<void> handleRecurringAction(WidgetRef ref, String recurringId, String action) async {
-  if (_isDuplicate('$recurringId|$action')) return;
+Future<void> handleRecurringAction(WidgetRef ref, String payload, String action) async {
+  try {
+    await _handleRecurringAction(ref, payload, action);
+  } catch (e) {
+    // Xato jim yutilib ketmasin — Bildirishnomalar tarixida ko'rinadi
+    await NotificationHistory.add('Xatolik (tugma)', '$action: $e');
+  }
+}
+
+Future<void> _handleRecurringAction(WidgetRef ref, String payload, String action) async {
+  if (_isDuplicate('$payload|$action')) return;
+
+  // payload: "<id>|<ms>" (yoki eski format: faqat "<id>")
+  final parts = payload.split('|');
+  final recurringId = parts.first;
+  DateTime? occurrence;
+  if (parts.length > 1) {
+    final ms = int.tryParse(parts[1]);
+    if (ms != null) occurrence = DateTime.fromMillisecondsSinceEpoch(ms);
+  }
 
   // Sinov bildirishnomasi — faqat tugmalar ishlayotganini ko'rsatadi
   if (recurringId == 'test') {
@@ -97,9 +117,18 @@ Future<void> handleRecurringAction(WidgetRef ref, String recurringId, String act
   try {
     r = ref.read(recurringProvider).firstWhere((x) => x.id == recurringId);
   } catch (_) {
+    await NotificationHistory.add('Qoida topilmadi', 'Tugma bosildi ($action), lekin takrorlanuvchi qoida topilmadi');
     return;
   }
   final name = r.source ?? 'Tranzaksiya';
+
+  // Bu bildirishnoma allaqachon o'tib ketgan davr uchunmi (qoida keyingi davrga surilgan)?
+  final stale = occurrence != null && r.nextOccurrence.isAfter(occurrence);
+
+  if (stale && action == 'snooze') {
+    await NotificationService.showInfo('Eslatma eskirgan', '"$name" uchun keyingi davr allaqachon rejalangan');
+    return;
+  }
 
   if (action == 'done') {
     if (r.type == 'expense' && r.amount > calculateCurrentBalance(ref)) {
@@ -111,19 +140,20 @@ Future<void> handleRecurringAction(WidgetRef ref, String recurringId, String act
             amount: r.amount,
             categoryId: r.categoryId,
             type: r.type,
-            date: r.nextOccurrence,
+            date: DateTime.now(), // tasdiqlangan payt — joriy oyda albatta ko'rinadi
             note: r.note,
             source: name,
           ));
+      ref.read(transactionProvider.notifier).refresh();
       await NotificationHistory.add('Tranzaksiya qo\'shildi', '"$name" — ${r.amount.toStringAsFixed(0)} so\'m');
       await NotificationService.showInfo("Qo'shildi ✅", '"$name" tranzaksiyalarga yozildi');
     }
     r.snoozeUntil = null;
-    r.nextOccurrence = _advance(r);
+    if (!stale) r.nextOccurrence = _advance(r);
   } else if (action == 'cancel_action' || action == 'cancel') {
     await NotificationHistory.add('Bekor qilindi', '"$name" ushbu safar yaratilmadi');
     r.snoozeUntil = null;
-    r.nextOccurrence = _advance(r);
+    if (!stale) r.nextOccurrence = _advance(r);
   } else if (action == 'snooze') {
     r.snoozeUntil = DateTime.now().add(const Duration(hours: 2));
     await NotificationHistory.add('Keyinroq eslatiladi', '"$name" — 2 soatdan keyin');
