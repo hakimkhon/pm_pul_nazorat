@@ -9,6 +9,8 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/thousands_formatter.dart';
 import '../../core/utils/budget_alert_checker.dart';
 import '../../core/utils/balance_guard.dart';
+import '../../core/utils/voice_parser.dart';
+import '../../core/utils/voice_input_sheet.dart';
 
 class AddTransactionScreen extends ConsumerStatefulWidget {
   final TransactionModel? existing;
@@ -53,7 +55,18 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     final categories = ref.watch(categoryProvider).where((c) => c.type == _type).toList();
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.existing != null ? 'Tranzaksiyani tahrirlash' : 'Yangi tranzaksiya')),
+      appBar: AppBar(
+        title: Text(widget.existing != null ? 'Tranzaksiyani tahrirlash' : 'Yangi tranzaksiya'),
+        actions: [
+          // Ovozli kiritish — faqat yangi tranzaksiya qo'shishda
+          if (widget.existing == null)
+            IconButton(
+              tooltip: "Ovoz bilan to'ldirish",
+              icon: Icon(Icons.mic_rounded, color: AppTheme.brandPrimary(context)),
+              onPressed: _startVoiceInput,
+            ),
+        ],
+      ),
       // ---- Asosiy forma: scroll qilinadigan qism ----
       body: SafeArea(
         bottom: false,
@@ -136,9 +149,9 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
               TextField(
                 controller: _noteController,
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-                decoration: const InputDecoration(labelText: 'Izoh (ixtiyoriy)', isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 10)),
+                decoration: const InputDecoration(labelText: 'Izoh (ixtiyoriy)'),
                 minLines: 1,
-                maxLines: 3,
+                maxLines: 3, // boshqa maydonlar bilan bir xil o'lchamda, uzun matn yozilsagina kengayadi
               ),
               const SizedBox(height: 12), // Pastdagi tugma bilan urilib qolmasligi uchun kichik bo'shliq
             ],
@@ -162,6 +175,40 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _startVoiceInput() async {
+    FocusScope.of(context).unfocus();
+    final draft = await showVoiceInputSheet(context, ref.read(categoryProvider));
+    if (draft == null || !mounted) return;
+    _applyDraft(draft);
+  }
+
+  /// Ovozdan tushunilgan ma'lumotlarni formaga yozadi. Saqlash baribir foydalanuvchi tasdig'i bilan.
+  void _applyDraft(VoiceDraft d) {
+    setState(() {
+      if (d.type != null && d.type != _type) {
+        _type = d.type!;
+        _selectedCategoryId = null;
+      }
+      if (d.amount != null) {
+        _amountController.text = NumberFormat.decimalPattern('en_US').format(d.amount!.round()).replaceAll(',', ' ');
+      }
+      if (d.categoryId != null) _selectedCategoryId = d.categoryId;
+      if (d.date != null) _selectedDate = d.date!;
+      if (d.note.isNotEmpty) _noteController.text = d.note;
+    });
+
+    final missing = <String>[
+      if (d.amount == null) 'summa',
+      if (d.categoryId == null) "bo'lim",
+    ];
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 5),
+      content: Text(missing.isEmpty
+          ? "Ovozdan to'ldirildi. Tekshirib, «Saqlash»ni bosing."
+          : "Ovozdan to'ldirildi. Iltimos, ${missing.join(' va ')}ni o'zingiz kiriting."),
+    ));
   }
 
   void _saveTransaction() async {

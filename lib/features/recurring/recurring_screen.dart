@@ -187,6 +187,11 @@ class _RecurringScreenState extends ConsumerState<RecurringScreen> {
       doneCount[rid] = (doneCount[rid] ?? 0) + 1;
       doneSum[rid] = (doneSum[rid] ?? 0) + t.amount;
     }
+    // Faqat tanlangan davrga tegishli qoidalar: shu davrda sodir bo'ladigan yoki shu davrda tasdiqlangan
+    bool inPeriod(RecurringTransactionModel r) => _occurrencesIn(r, range) > 0 || (doneCount[r.id] ?? 0) > 0;
+    final shownIncome = incomeRules.where(inPeriod).toList();
+    final shownExpense = expenseRules.where(inPeriod).toList();
+
     final periodWord = {'weekly': 'hafta', 'monthly': 'oy', 'yearly': 'yil'}[_periodTab]!;
     final periodPrefix = '${isCurrent ? 'Bu' : 'Shu'} $periodWord';
 
@@ -270,17 +275,17 @@ class _RecurringScreenState extends ConsumerState<RecurringScreen> {
               child: EmptyState(icon: Icons.event_repeat_rounded, title: "Hali takrorlanuvchi tranzaksiya yo'q", subtitle: "Pastdagi tugma orqali qo'shing"),
             )
           else ...[
-            SectionTitle('Kirimlar', trailing: Text('${incomeRules.length} ta', style: Theme.of(context).textTheme.labelSmall)),
-            if (incomeRules.isEmpty)
-              Padding(padding: const EdgeInsets.only(bottom: 8, left: 4), child: Text("Hozircha yo'q", style: Theme.of(context).textTheme.labelSmall))
+            SectionTitle('Kirimlar', trailing: Text('${shownIncome.length} ta', style: Theme.of(context).textTheme.labelSmall)),
+            if (shownIncome.isEmpty)
+              Padding(padding: const EdgeInsets.only(bottom: 8, left: 4), child: Text("Bu davrda yo'q", style: Theme.of(context).textTheme.labelSmall))
             else
-              ...List.generate(incomeRules.length, (i) => tile(incomeRules[i], i)),
+              ...List.generate(shownIncome.length, (i) => tile(shownIncome[i], i)),
             const SizedBox(height: 8),
-            SectionTitle('Chiqimlar', trailing: Text('${expenseRules.length} ta', style: Theme.of(context).textTheme.labelSmall)),
-            if (expenseRules.isEmpty)
-              Padding(padding: const EdgeInsets.only(bottom: 8, left: 4), child: Text("Hozircha yo'q", style: Theme.of(context).textTheme.labelSmall))
+            SectionTitle('Chiqimlar', trailing: Text('${shownExpense.length} ta', style: Theme.of(context).textTheme.labelSmall)),
+            if (shownExpense.isEmpty)
+              Padding(padding: const EdgeInsets.only(bottom: 8, left: 4), child: Text("Bu davrda yo'q", style: Theme.of(context).textTheme.labelSmall))
             else
-              ...List.generate(expenseRules.length, (i) => tile(expenseRules[i], i)),
+              ...List.generate(shownExpense.length, (i) => tile(shownExpense[i], i)),
           ],
         ],
       ),
